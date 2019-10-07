@@ -14,10 +14,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#define MAX_SIZE 100
+#define MAX_SIZE 1024
 extern char **environ;
 #define PORT 8080
-#define SA struct sockaddr 
+#define SA struct sockaddr
 
 
 void checkHostName(int hostname)
@@ -78,6 +78,234 @@ typedef struct {
     int active;
 } node;
 
+int n;
+int pipefds[2];
+int* sockfds;
+node *list;
+int idx=0;
+
+void createChildProcess() {
+    fflush (stdout);
+    char cwd[1024];
+    getcwd(cwd, sizeof(cwd));
+    printf ("prompt> ");
+    printf("%s$ ",cwd);
+    fflush (stdout);
+    char buf[MAX_SIZE];
+    int length = read(0,buf,MAX_SIZE);
+    buf[length]='\0';
+    for (int i = 0; i < MAX_SIZE; i++)
+        if(buf[i] == '\n') {
+            buf[i]='\0';
+        }
+    write(pipefds[1], buf, sizeof(buf));
+    exit(0);
+}
+
+void initializesockets() {
+
+    sockfds = (int*)malloc(sizeof(int)*n);
+    struct sockaddr_in servaddr, cli;
+
+    // socket create and varification
+    for(int i=0;i<n;i++) {
+        sockfds[i] = socket(AF_INET, SOCK_STREAM, 0);
+        if (sockfds[i] == -1) {
+            printf("socket creation failed...\n");
+            exit(0);
+        }
+    }
+    // sleep(10);
+
+    while(1) {
+        for(int i=0;i<n;i++) {
+            if(list[i].active==1) continue;
+            bzero(&servaddr, sizeof(servaddr));
+
+            // assign IP, PORT
+            servaddr.sin_family = AF_INET;
+            servaddr.sin_addr.s_addr = inet_addr(list[i].ip);
+            servaddr.sin_port = htons(PORT);
+            // connect the client socket to server socket
+            if (connect(sockfds[i], (SA*)&servaddr, sizeof(servaddr)) == 0) {
+                list[i].active = 1;
+                char *home = getenv("HOME");
+                send(sockfds[i] , home , strlen(home) , 0 );
+                // printf("Home sent to server\n");
+            }
+        }
+    }
+
+}
+
+int checkpipe(char* msg) {
+    char* temp1 = strsep(&msg,"|");
+    char* temp2 = strsep(&msg,"|");
+    if(temp2==NULL) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+int findnode(char *message) {
+    char *x = (char*)malloc(sizeof(char)*MAX_SIZE);
+    strcpy(x,message);
+    char *tmp = strsep(&x,".");
+    if(strcmp(tmp,"n*")==0) {
+        return -1;
+    } else {
+        for(int i=0;i<n;i++) {
+            if(strcmp(tmp,list[i].name)==0) {
+                return i;
+            }
+        }
+    }
+    return -2;
+}
+
+void runcommand(char* msg, int nodeidx) {
+
+    if(nodeidx==-2) {
+        int count=2;
+        for(int i=0;msg[i]!='\0';i++) {
+            if(msg[i]==' ') {
+                count++;
+            }
+        }
+        char** arg = (char**)malloc(sizeof(char*)*count);
+        for(int i=0;i<count;i++) {
+            arg[i] = (char*)malloc(sizeof(char)*MAX_SIZE);
+        }
+        int ptr;
+        for (ptr = 0; ptr < count; ptr++) {
+            arg[ptr] = strsep(&msg, " ");
+            if (arg[ptr] == NULL) {
+                break;
+            }
+
+            if (strlen(arg[ptr]) == 0)
+                ptr--;
+
+        }
+
+        if(strcmp(arg[0],"cd")==0) {
+            chdir(arg[1]);
+            return;
+        }
+        int p = fork();
+        if(p==0) {
+            execvp(arg[0],arg);
+            exit(0);
+        }
+        int stat_loc;
+        waitpid(p, &stat_loc, WUNTRACED);
+        sleep(0.5);
+        // system(msg);
+    } else if(nodeidx!=-1) {
+        if(list[nodeidx].active==0) {
+            printf("Node not active, cannot run command\n");
+            return;
+        }
+        send(sockfds[nodeidx], msg , strlen(msg) , 0);
+        char *out = (char*)malloc(sizeof(char)*MAX_SIZE);
+        int val = read(sockfds[nodeidx] , out, MAX_SIZE);
+        if(val!=-1) {
+            out[val]='\0';
+            printf("%s",out);
+        }
+        close(sockfds[nodeidx]);
+        sockfds[nodeidx] = socket(AF_INET, SOCK_STREAM, 0);
+
+        struct sockaddr_in servaddr, cli;
+        bzero(&servaddr, sizeof(servaddr));
+
+        // assign IP, PORT
+        servaddr.sin_family = AF_INET;
+        servaddr.sin_addr.s_addr = inet_addr(list[nodeidx].ip);
+        servaddr.sin_port = htons(PORT);
+        // connect the client socket to server socket
+        if (connect(sockfds[nodeidx], (SA*)&servaddr, sizeof(servaddr)) == 0) {
+            // printf("Home sent to server\n");
+        } else {
+            list[nodeidx].active=0;
+        }
+
+    } else {
+        for(int i=0;i<n;i++) {
+            if(list[i].active==1) {
+                char *temp = (char*)malloc(sizeof(char)*MAX_SIZE);
+                strcpy(temp,msg);
+                if(i==idx) {
+                    runcommand(temp, -2);
+                } else {
+                    runcommand(temp, i);
+                }
+            }
+        }
+    }
+
+    // char** arg = (char**)malloc(sizeof(char*)*2);
+    // arg[2] = NULL;
+    // arg[0] = (char*)malloc(sizeof(char)*5);
+    // arg[1] = (char*)malloc(sizeof(char)*10);
+    // strcpy(arg[0],"cd");
+    // strcpy(arg[1],"../..");
+    // execvp(arg[0],arg);
+    // arg[1]=NULL;
+    // chdir("../..");
+    // strcpy(arg[0],"ls");
+    // execvp(arg[0],arg);
+}
+void executeshell(char* msg) {
+    if(strcmp(msg,"nodes")==0) {
+        runcommand("sleep 0.00001", -1);
+        printf("Current Active Nodes\n");
+        for(int i=0;i<n;i++) {
+            if(list[i].active==1) {
+                printf("%s--->%s\n",list[i].name,list[i].ip);
+            }
+        }
+        return;
+    }
+
+    int ispipe = checkpipe(msg);
+
+    if(ispipe==0) {
+        int nodeidx = findnode(msg);
+
+        // if(nodeidx==-1) {
+        //     printf("Command for all nodes\n");
+        // } else if(nodeidx==-2) {
+        //     printf("Local command\n");
+        // } else {
+        //     printf("Command for %s\n",list[nodeidx].name);
+        // }
+        if(nodeidx!=-2) {
+            char *x = (char*)malloc(sizeof(char)*MAX_SIZE);
+            strcpy(x,msg);
+            x = strsep(&x,".");
+            msg+=(strlen(x)+1);
+            if(nodeidx==idx) {
+                nodeidx=-2;
+            }
+        }
+        // printf("%s\n",msg);
+        runcommand(msg,nodeidx);
+
+    }
+}
+
+void handle_child_term(int sig) {
+    char readmessage[MAX_SIZE];
+    read(pipefds[0], readmessage, sizeof(readmessage));
+    executeshell(readmessage);
+    if(fork()==0) {
+        createChildProcess();
+    }
+}
+
+
 int main() {
 
     // char buf[MAX_SIZE];
@@ -87,12 +315,16 @@ int main() {
 	// system(buf);
     FILE *fp;
     char buff[255];
+    signal(SIGCHLD, handle_child_term);
 
-    int n;
+    if(pipe(pipefds)==-1) {
+        printf("Pipe Creation failed...\n");
+        exit(0);
+    }
+
     fp = fopen("./config_file", "r");
     fscanf(fp, "%d\n", &n);
     printf("Number of Nodes: %d\n",n);
-    node *list;
     list = (node*)malloc(sizeof(node)*n);
     for(int i=0;i<n;i++) {
         char temp1[255];
@@ -116,7 +348,6 @@ int main() {
 
     }
     fclose(fp);
-    int idx=0;
     for(int i=0;i<n;i++) {
         if(strcpy(getip(),list[i].ip)==0) {
             idx=i;
@@ -124,34 +355,22 @@ int main() {
         }
     }
     list[idx].active = 1;
+    printf("This is N%d\n",idx+1);
 
-
-    int sockfd, connfd;
-    struct sockaddr_in servaddr, cli;
-
-    // socket create and varification
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd == -1) {
-        printf("socket creation failed...\n");
-        exit(0);
+    if(fork()>0) {
+        initializesockets();
+    } else {
+        createChildProcess();
     }
-    else
-        printf("Socket successfully created..\n");
-    bzero(&servaddr, sizeof(servaddr));
 
-    // assign IP, PORT
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr(list[1].ip);
-    servaddr.sin_port = htons(PORT);
 
-    // connect the client socket to server socket
-    if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
-        printf("connection with the server failed...\n");
-        exit(0);
-    }
-    else
-        printf("connected to the server..\n");
-
+    // sleep(5);
+    // printf("Enter Socket ID\n");
+    // int sock;
+    // scanf("%d",&sock);
+    // char *hello = "Hello from client";
+    // send(sock , hello , strlen(hello) , 0 );
+    // printf("Hello message sent\n");
 
 
 

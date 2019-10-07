@@ -14,9 +14,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#define MAX_SIZE 100
+#define MAX_SIZE 1024
 extern char **environ;
-
+#define PORT 8080
+#define SA struct sockaddr
 
 
 void checkHostName(int hostname)
@@ -79,7 +80,8 @@ typedef struct {
 int main() {
 
     FILE *fp;
-    char buff[255];
+    char *buff;
+    buff = (char*)malloc(sizeof(char)*255);
 
     int n;
     fp = fopen("./config_file", "r");
@@ -117,11 +119,131 @@ int main() {
         }
     }
     idx=1;
+    printf("This is N%d\n",idx+1);
 
-    // char buf[MAX_SIZE];
-    // int length = read(0,buf,MAX_SIZE);
-    // buf[length]='\0';
-    // // printf("HOME : %s\n", getenv("HOME"));
+
+
+    int sockfd, connfd, len;
+    struct sockaddr_in servaddr, cli;
+
+    // socket create and verification
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1) {
+        printf("socket creation failed...\n");
+        exit(0);
+    }
+    // else
+    //     printf("Socket successfully created..\n");
+    bzero(&servaddr, sizeof(servaddr));
+
+    // assign IP, PORT
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(PORT);
+
+    // Binding newly created socket to given IP and verification
+    if ((bind(sockfd, (SA*)&servaddr, sizeof(servaddr))) != 0) {
+        printf("socket bind failed...\n");
+        exit(0);
+    }
+    // else
+    //     printf("Socket successfully binded..\n");
+
+    // Now server is ready to listen and verification
+    if ((listen(sockfd, 1)) != 0) {
+        printf("Listen failed...\n");
+        exit(0);
+    }
+    // else
+    //     printf("Server listening..\n");
+    len = sizeof(cli);
+
+    // Accept the data packet from client and verification
+    connfd = accept(sockfd, (SA*)&cli, &len);
+    if (connfd < 0) {
+        printf("server acccept failed...\n");
+        exit(0);
+    }
+    // else
+    //     printf("server acccept the client...\n");
+    int valread = read(connfd , buff, 255);
+    // printf("%s\n",buff);
+    chdir(buff);
+
+    while(1) {
+        char cwd[1024];
+        char *msg;
+        msg = (char*)malloc(sizeof(char)*MAX_SIZE);
+        getcwd(cwd, sizeof(cwd));
+        printf("%s$\n",cwd);
+        int val = read(connfd , msg, MAX_SIZE);
+        // printf("Bytes read: %d\n",val);
+        msg[val]='\0';
+        // printf("Msg received: %s\n\n\n",msg);
+        int count=2;
+        for(int i=0;msg[i]!='\0';i++) {
+            if(msg[i]==' ') {
+                count++;
+            }
+        }
+        char** arg = (char**)malloc(sizeof(char*)*count);
+        for(int i=0;i<count;i++) {
+            arg[i] = (char*)malloc(sizeof(char)*MAX_SIZE);
+        }
+        int ptr;
+        for (ptr = 0; ptr < count; ptr++) {
+            arg[ptr] = strsep(&msg, " ");
+            if (arg[ptr] == NULL) {
+                break;
+            }
+
+            if (strlen(arg[ptr]) == 0)
+                ptr--;
+
+        }
+
+        if(strcmp(arg[0],"cd")==0) {
+            chdir(arg[1]);
+            // printf("Changed to new directory %s\n",arg[1]);
+        } else {
+            int p = fork();
+            if(p==0) {
+                dup2(connfd,1);
+                execvp(arg[0],arg);
+                exit(0);
+            }
+            int stat_loc;
+            waitpid(p, &stat_loc, WUNTRACED);
+
+        }
+        close(connfd);
+        if ((listen(sockfd, 1)) != 0) {
+            printf("Listen failed...\n");
+            exit(0);
+        }
+
+        len = sizeof(cli);
+        connfd = accept(sockfd, (SA*)&cli, &len);
+        if (connfd < 0) {
+            printf("server acccept failed...\n");
+            exit(0);
+        }
+
+    }
+    // char** arg = (char**)malloc(sizeof(char*)*2);
+    // arg[2] = NULL;
+    // arg[0] = (char*)malloc(sizeof(char)*5);
+    // arg[1] = (char*)malloc(sizeof(char)*10);
+    // strcpy(arg[0],"cd");
+    // strcpy(arg[1],"../..");
+    // execvp(arg[0],arg);
+    // arg[1]=NULL;
+    // chdir("../..");
+    // strcpy(arg[0],"ls");
+    // execvp(arg[0],arg);
+
+
+    // printf("HOME : %s\n", getenv("HOME"));
 	// system(buf);
 
     return 0;
