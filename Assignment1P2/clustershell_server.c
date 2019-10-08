@@ -132,8 +132,8 @@ int main() {
         printf("socket creation failed...\n");
         exit(0);
     }
-    // else
-    //     printf("Socket successfully created..\n");
+    else
+        printf("Socket successfully created..\n");
     bzero(&servaddr, sizeof(servaddr));
 
     // assign IP, PORT
@@ -146,16 +146,16 @@ int main() {
         printf("socket bind failed...\n");
         exit(0);
     }
-    // else
-    //     printf("Socket successfully binded..\n");
+    else
+        printf("Socket successfully binded..\n");
 
     // Now server is ready to listen and verification
     if ((listen(sockfd, 1)) != 0) {
         printf("Listen failed...\n");
         exit(0);
     }
-    // else
-    //     printf("Server listening..\n");
+    else
+        printf("Server listening..\n");
     len = sizeof(cli);
 
     // Accept the data packet from client and verification
@@ -164,8 +164,8 @@ int main() {
         printf("server acccept failed...\n");
         exit(0);
     }
-    // else
-    //     printf("server acccept the client...\n");
+    else
+        printf("server acccept the client...\n");
     int valread = read(connfd , buff, 255);
     // printf("%s\n",buff);
     chdir(buff);
@@ -176,6 +176,15 @@ int main() {
         msg = (char*)malloc(sizeof(char)*MAX_SIZE);
         getcwd(cwd, sizeof(cwd));
         printf("%s$\n",cwd);
+        char *temppipe = (char*)malloc(sizeof(char)*2);
+        int pipeval = read(connfd,temppipe,2);
+        temppipe[pipeval]='\0';
+        int ispipe;
+        if(strcmp(temppipe,"0")==0) {
+            ispipe=0;
+        } else {
+            ispipe=1;
+        }
         int val = read(connfd , msg, MAX_SIZE);
         // printf("Bytes read: %d\n",val);
         msg[val]='\0';

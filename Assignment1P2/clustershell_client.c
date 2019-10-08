@@ -99,6 +99,7 @@ void createChildProcess() {
             buf[i]='\0';
         }
     write(pipefds[1], buf, sizeof(buf));
+    int ret = kill(getppid(),SIGUSR1);
     exit(0);
 }
 
@@ -118,6 +119,8 @@ void initializesockets() {
     // sleep(10);
 
     while(1) {
+        // printf("vidit\n");
+        // sleep(1);
         for(int i=0;i<n;i++) {
             if(list[i].active==1) continue;
             bzero(&servaddr, sizeof(servaddr));
@@ -164,8 +167,7 @@ int findnode(char *message) {
     return -2;
 }
 
-void runcommand(char* msg, int nodeidx) {
-
+void runcommand(char* msg, int nodeidx, int ispipe) {
     if(nodeidx==-2) {
         int count=2;
         for(int i=0;msg[i]!='\0';i++) {
@@ -207,13 +209,26 @@ void runcommand(char* msg, int nodeidx) {
             printf("Node not active, cannot run command\n");
             return;
         }
-        send(sockfds[nodeidx], msg , strlen(msg) , 0);
-        char *out = (char*)malloc(sizeof(char)*MAX_SIZE);
-        int val = read(sockfds[nodeidx] , out, MAX_SIZE);
-        if(val!=-1) {
-            out[val]='\0';
-            printf("%s",out);
+        int p = fork();
+        if(p==0) {
+            char *temppipe = (char*)malloc(sizeof(char)*2);
+            if(ispipe==0) {
+                strcpy(temppipe,"0");
+            } else {
+                strcpy(temppipe,"1");
+            }
+            send(sockfds[nodeidx],temppipe,1+strlen(temppipe),0);
+            send(sockfds[nodeidx], msg , 1+strlen(msg) , 0);
+            char *out = (char*)malloc(sizeof(char)*MAX_SIZE);
+            int val = read(sockfds[nodeidx] , out, MAX_SIZE);
+            if(val!=-1) {
+                out[val]='\0';
+                printf("%s",out);
+            }
         }
+        int stat_loc;
+        waitpid(p, &stat_loc, WUNTRACED);
+
         close(sockfds[nodeidx]);
         sockfds[nodeidx] = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -237,9 +252,9 @@ void runcommand(char* msg, int nodeidx) {
                 char *temp = (char*)malloc(sizeof(char)*MAX_SIZE);
                 strcpy(temp,msg);
                 if(i==idx) {
-                    runcommand(temp, -2);
+                    runcommand(temp, -2, ispipe);
                 } else {
-                    runcommand(temp, i);
+                    runcommand(temp, i, ispipe);
                 }
             }
         }
@@ -259,7 +274,7 @@ void runcommand(char* msg, int nodeidx) {
 }
 void executeshell(char* msg) {
     if(strcmp(msg,"nodes")==0) {
-        runcommand("sleep 0.00001", -1);
+        runcommand("sleep 0.00001", -1, 0);
         printf("Current Active Nodes\n");
         for(int i=0;i<n;i++) {
             if(list[i].active==1) {
@@ -268,9 +283,10 @@ void executeshell(char* msg) {
         }
         return;
     }
-
-    int ispipe = checkpipe(msg);
-
+    char *x = (char*)malloc(sizeof(char)*MAX_SIZE);
+    strcpy(x,msg);
+    int ispipe = checkpipe(x);
+    // printf("ISPIPE %d\n",ispipe);
     if(ispipe==0) {
         int nodeidx = findnode(msg);
 
@@ -282,7 +298,6 @@ void executeshell(char* msg) {
         //     printf("Command for %s\n",list[nodeidx].name);
         // }
         if(nodeidx!=-2) {
-            char *x = (char*)malloc(sizeof(char)*MAX_SIZE);
             strcpy(x,msg);
             x = strsep(&x,".");
             msg+=(strlen(x)+1);
@@ -291,12 +306,46 @@ void executeshell(char* msg) {
             }
         }
         // printf("%s\n",msg);
-        runcommand(msg,nodeidx);
+        runcommand(msg,nodeidx,0);
 
+    } else {
+        strcpy(x,msg);
+        pid_t wpid;
+        int status = 0;
+        char *y = (char*)malloc(sizeof(char)*MAX_SIZE);
+        int count=0;
+        int c1=0;
+        for(int i=0;msg[i]!='\0';i++) {
+            if(msg[i]=='|') c1++;
+        }
+        int fd[2];
+        pipe(fd);
+        while( (y = strsep(&x,"|")) != NULL ) {
+            int nodeidx = findnode(y);
+            if(nodeidx!=-2) {
+                char *z = (char*)malloc(sizeof(char)*MAX_SIZE);
+                strcpy(z,y);
+                z = strsep(&z,".");
+                y+=(strlen(z)+1);
+                if(nodeidx==idx) {
+                    nodeidx=-2;
+                }
+            }
+            if(fork()==0) {
+                exit(0);
+            }
+            count++;
+            wait(NULL);
+        }
+        // for(int i=0; i<c1; i++){
+        //   wait(NULL);
+        // }
+        printf("jsbajbabvj\n");
     }
 }
 
 void handle_child_term(int sig) {
+    wait(NULL);
     char readmessage[MAX_SIZE];
     read(pipefds[0], readmessage, sizeof(readmessage));
     executeshell(readmessage);
@@ -315,7 +364,7 @@ int main() {
 	// system(buf);
     FILE *fp;
     char buff[255];
-    signal(SIGCHLD, handle_child_term);
+    signal(SIGUSR1, handle_child_term);
 
     if(pipe(pipefds)==-1) {
         printf("Pipe Creation failed...\n");
