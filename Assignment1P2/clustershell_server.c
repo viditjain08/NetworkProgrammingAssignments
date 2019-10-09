@@ -14,6 +14,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
 #define MAX_SIZE 1024
 extern char **environ;
 #define PORT 8080
@@ -150,7 +152,7 @@ int main() {
         printf("Socket successfully binded..\n");
 
     // Now server is ready to listen and verification
-    if ((listen(sockfd, 1)) != 0) {
+    if ((listen(sockfd, 5)) != 0) {
         printf("Listen failed...\n");
         exit(0);
     }
@@ -177,18 +179,25 @@ int main() {
         getcwd(cwd, sizeof(cwd));
         printf("%s$\n",cwd);
         char *temppipe = (char*)malloc(sizeof(char)*2);
+
         int pipeval = read(connfd,temppipe,2);
+        // while(pipeval<=0) {
+        //     printf("%d\n",pipeval);
+        //     pipeval = read(connfd,temppipe,2);
+        // }
         temppipe[pipeval]='\0';
+
         int ispipe;
         if(strcmp(temppipe,"0")==0) {
             ispipe=0;
         } else {
             ispipe=1;
         }
+
         int val = read(connfd , msg, MAX_SIZE);
-        // printf("Bytes read: %d\n",val);
+        printf("Bytes read: %d\n",val);
         msg[val]='\0';
-        // printf("Msg received: %s\n\n\n",msg);
+        printf("Msg received: %s\n",msg);
         int count=2;
         for(int i=0;msg[i]!='\0';i++) {
             if(msg[i]==' ') {
@@ -215,18 +224,38 @@ int main() {
             chdir(arg[1]);
             // printf("Changed to new directory %s\n",arg[1]);
         } else {
+            int execpipe[2];
+            char *in = (char*)malloc(sizeof(char)*MAX_SIZE);
+            if(ispipe==1) {
+                int tempval = read(connfd, in, MAX_SIZE);
+                in[tempval] = '\0';
+                // printf("%s-%d\n",in,tempval);
+                pipe(execpipe);
+            }
             int p = fork();
             if(p==0) {
-                dup2(connfd,1);
+                if(ispipe==1) {
+                    close(execpipe[1]);
+                    dup2(execpipe[0],STDIN_FILENO);
+                    close(execpipe[0]);
+                }
+                dup2(connfd,STDOUT_FILENO);
                 execvp(arg[0],arg);
                 exit(0);
+            } else {
+                if(ispipe==1) {
+
+                    close(execpipe[0]);
+                    write(execpipe[1],in,strlen(in));
+                    close(execpipe[1]);
+                }
             }
+
             int stat_loc;
             waitpid(p, &stat_loc, WUNTRACED);
-
         }
         close(connfd);
-        if ((listen(sockfd, 1)) != 0) {
+        if ((listen(sockfd, 5)) != 0) {
             printf("Listen failed...\n");
             exit(0);
         }
@@ -237,7 +266,6 @@ int main() {
             printf("server acccept failed...\n");
             exit(0);
         }
-
     }
     // char** arg = (char**)malloc(sizeof(char*)*2);
     // arg[2] = NULL;

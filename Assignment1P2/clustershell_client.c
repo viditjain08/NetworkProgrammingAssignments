@@ -19,6 +19,7 @@ extern char **environ;
 #define PORT 8080
 #define SA struct sockaddr
 
+int infd,outfd;
 
 void checkHostName(int hostname)
 {
@@ -115,6 +116,8 @@ void initializesockets() {
             printf("socket creation failed...\n");
             exit(0);
         }
+
+
     }
     // sleep(10);
 
@@ -175,6 +178,7 @@ void runcommand(char* msg, int nodeidx, int ispipe) {
                 count++;
             }
         }
+
         char** arg = (char**)malloc(sizeof(char*)*count);
         for(int i=0;i<count;i++) {
             arg[i] = (char*)malloc(sizeof(char)*MAX_SIZE);
@@ -190,11 +194,14 @@ void runcommand(char* msg, int nodeidx, int ispipe) {
                 ptr--;
 
         }
-
         if(strcmp(arg[0],"cd")==0) {
             chdir(arg[1]);
             return;
         }
+
+        // char *buf = (char*)malloc(sizeof(char)*MAX_SIZE);
+        // int val = read(0,buf,MAX_SIZE);
+        // buf[val] = '\0';
         int p = fork();
         if(p==0) {
             execvp(arg[0],arg);
@@ -209,6 +216,7 @@ void runcommand(char* msg, int nodeidx, int ispipe) {
             printf("Node not active, cannot run command\n");
             return;
         }
+
         int p = fork();
         if(p==0) {
             char *temppipe = (char*)malloc(sizeof(char)*2);
@@ -217,14 +225,24 @@ void runcommand(char* msg, int nodeidx, int ispipe) {
             } else {
                 strcpy(temppipe,"1");
             }
+
             send(sockfds[nodeidx],temppipe,1+strlen(temppipe),0);
-            send(sockfds[nodeidx], msg , 1+strlen(msg) , 0);
+            char temp_msg[MAX_SIZE];
+            strcpy(temp_msg, msg);
+            send(sockfds[nodeidx], temp_msg , MAX_SIZE, 0);
+            if(ispipe==1) {
+                char in[MAX_SIZE];
+                int temp = read(STDIN_FILENO,in,MAX_SIZE);
+                in[temp] = '\0';
+                send(sockfds[nodeidx],in,MAX_SIZE,0);
+            }
             char *out = (char*)malloc(sizeof(char)*MAX_SIZE);
             int val = read(sockfds[nodeidx] , out, MAX_SIZE);
             if(val!=-1) {
                 out[val]='\0';
                 printf("%s",out);
             }
+            exit(0);
         }
         int stat_loc;
         waitpid(p, &stat_loc, WUNTRACED);
@@ -259,18 +277,6 @@ void runcommand(char* msg, int nodeidx, int ispipe) {
             }
         }
     }
-
-    // char** arg = (char**)malloc(sizeof(char*)*2);
-    // arg[2] = NULL;
-    // arg[0] = (char*)malloc(sizeof(char)*5);
-    // arg[1] = (char*)malloc(sizeof(char)*10);
-    // strcpy(arg[0],"cd");
-    // strcpy(arg[1],"../..");
-    // execvp(arg[0],arg);
-    // arg[1]=NULL;
-    // chdir("../..");
-    // strcpy(arg[0],"ls");
-    // execvp(arg[0],arg);
 }
 void executeshell(char* msg) {
     if(strcmp(msg,"nodes")==0) {
@@ -290,13 +296,6 @@ void executeshell(char* msg) {
     if(ispipe==0) {
         int nodeidx = findnode(msg);
 
-        // if(nodeidx==-1) {
-        //     printf("Command for all nodes\n");
-        // } else if(nodeidx==-2) {
-        //     printf("Local command\n");
-        // } else {
-        //     printf("Command for %s\n",list[nodeidx].name);
-        // }
         if(nodeidx!=-2) {
             strcpy(x,msg);
             x = strsep(&x,".");
@@ -320,6 +319,9 @@ void executeshell(char* msg) {
         }
         int fd[2];
         pipe(fd);
+        int temppipe[2];
+        outfd = dup(1);
+        infd = dup(0);
         while( (y = strsep(&x,"|")) != NULL ) {
             int nodeidx = findnode(y);
             if(nodeidx!=-2) {
@@ -331,7 +333,31 @@ void executeshell(char* msg) {
                     nodeidx=-2;
                 }
             }
-            if(fork()==0) {
+
+            if(count!=0) {
+                pipe(temppipe);
+            }
+
+            if(fork()!=0) {
+                if(count==0) {
+                    dup2(fd[1],STDOUT_FILENO);
+                    runcommand(y, nodeidx, 0);
+                } else {
+                    close(temppipe[1]);
+                    dup2(temppipe[0],STDIN_FILENO);
+                    dup2(fd[1],STDOUT_FILENO);
+                    close(temppipe[0]);
+                    runcommand(y, nodeidx, 1);
+                }
+            } else {
+                if(count!=0) {
+                    char *buf = (char*)malloc(sizeof(char)*MAX_SIZE);
+                    int val = read(fd[0],buf,MAX_SIZE);
+                    buf[val] = '\0';
+                    close(temppipe[0]);
+                    write(temppipe[1], buf, strlen(buf));
+                    close(temppipe[1]);
+                }
                 exit(0);
             }
             count++;
@@ -340,7 +366,13 @@ void executeshell(char* msg) {
         // for(int i=0; i<c1; i++){
         //   wait(NULL);
         // }
-        printf("jsbajbabvj\n");
+        dup2(infd,0);
+        dup2(outfd,1);
+        char *buf = (char*)malloc(sizeof(char)*MAX_SIZE);
+        int v = read(fd[0],buf,MAX_SIZE);
+        buf[v]='\0';
+        printf("%s",buf);
+        fflush(stdout);
     }
 }
 
