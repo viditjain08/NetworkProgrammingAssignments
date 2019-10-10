@@ -18,6 +18,11 @@
 #define MAX_SIZE 100
 #define NR_JOBS 20
 //char **lookuptable;
+typedef struct {
+    long mesg_type;
+    char mesg_text[MAX_SIZE];
+} message;
+
 struct job {
     int id;
     char *command;

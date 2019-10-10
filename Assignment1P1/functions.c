@@ -3,10 +3,12 @@
 char *getcommand(char *buf,int *noofargs){//gets the first command and updates no of args
 	char *delim = " ";
 	char *savebuf;
-	char *buf2 = (char*)malloc(MAX_SIZE);
+	char *buf2 = (char*)malloc(sizeof(char)*MAX_SIZE);
 	strcpy(buf2,buf);
 	int parser=0;
 	char *command = nextToken(buf2,&parser);
+
+
 	char *firstarg=command;
 	while (firstarg != NULL){
 		*noofargs+=1;
@@ -86,19 +88,21 @@ void parsecommand(char *completepath,char *path,char **argv,int nofargs) { //ind
 		pipecommand(completepath,path,argv,nofargs);
 	if(strinarr(argv,"<",nofargs,0) >= 0)
 		lessersign(path,argv,nofargs);
-	//if(strinarr(argv, "#",nofargs,0) >= 0)
-	//	messageQueuePipe(completepath,path,argv,nofargs);
+	if(strinarr(argv, "#",nofargs,0) >= 0)
+		messageQueuePipe(completepath,path,argv,nofargs);
 	if(strinarr(argv, "##",nofargs,0)>=0)
 		doubleMessageQueue(path,argv,nofargs);
-	if(strinarr(argv, "S",nofargs,0) >= 0)
+	if(strinarr(argv, "S",nofargs,0) >= 0) {
 		shmPipe(completepath,path,argv,nofargs);
+	}
 	// if(strinarr(argv, "SS",nofargs,0)>=0)
 	// 	doubleshm(path,argv,nofargs);
 	if((nofargs>2) && ((strcmp(argv[nofargs-2], ">") == 0) || (strcmp(argv[nofargs-2], ">>") == 0)))
 		greatersign(path,argv,nofargs);
 
-	else
+	else {
 		execv(path,argv);
+	}
 }
 
 int strinarr(char **argv, char *sym, int nofargs,int start_index) {	// returns index at which str is present in arr, -1 if not found
@@ -131,7 +135,7 @@ char *nextToken(char *str,int *point){
 		i++;
 	if(i>=strlen(str))
 		return NULL;
-	if(str[i]=='#' || str[i]=='>' || str[i]=='<' || str[i]=='|' || str[i]==',' || str[i]=='&'){
+	if(str[i]=='S' || str[i]=='#' || str[i]=='>' || str[i]=='<' || str[i]=='|' || str[i]==',' || str[i]=='&'){
 		temp[0]=str[i];
 		if(str[i]=='>' && str[i+1]=='>'){
 			temp[1]=str[i+1];
@@ -364,43 +368,100 @@ void pipecommand(char *completepath,char *path,char **argv,int nofargs) {
 }
 
 void shmPipe(char *completepath,char *path,char **argv,int nofargs) {
-	const char* name = "pipe";
+	const char* name = "shmpipe";
 	int countofpipe=0;
 	for(int i=0;i<nofargs;i++) {//counting number of pipes
 		if(strcmp(argv[i],"S") == 0) {
 			countofpipe++;
 		}
+		// printf("%s\n",argv[i]);
 	}
-		int prev_index=-1;
-		int index;
-		int shm_fd = shm_open(name, O_CREAT | O_RDWR, 0666);
-	for(int i=0;i<=countofpipe;i++) {
-		if(i!=countofpipe)
-			index = strinarr(argv,"S",nofargs,prev_index+1);
-		else
-			index = nofargs;
+	int prev_index=-1;
+	int index=0;
+	int shm_fd = shm_open(name, O_CREAT | O_RDWR, 0666);
+    ftruncate(shm_fd, MAX_SIZE);
+    void *ptr = mmap(0, MAX_SIZE, PROT_READ | 	PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    // const char* message_0 = "Hello";
+	//
+	// if(fork()==0)  {
+	// 	sprintf(ptr, "%s", message_0);
+	// 	ptr += strlen(message_0);
+	// } else {
+	// 	printf("%s\n", (char*)ptr);
+	// 	wait(NULL);
+	// }
+	int count=0;
+	int infd = dup(0);
+	int outfd = dup(1);
+	int fd[2];
+	pipe(fd);
+	int temppipe[2];
+	char* tempdata = (char*)malloc(sizeof(char)*MAX_SIZE);
+	while(count<=countofpipe) {
 
-		char *path1 = getfile(completepath,argv[prev_index+1]);
-		char **argv1 = subarray(argv,prev_index+1,index-1);
-		if(fork()==0) {//child
-			if(i!=0) {//read from prev pipe
-				job *j=(job *)malloc(sizeof(job));
-				j->pid=getpid();
-				insert_job(j);
-				close(0);
-				dup(shm_fd);
-			}
-			if(i!=countofpipe) {//write to next pipe
-				close(1);
-				dup(shm_fd);
-			}
-			parsecommand(completepath,path1,argv1,index-prev_index-1);
+		if(count!=0) {
+			pipe(temppipe);
+			strcpy(tempdata,(char*)ptr);
 		}
-		else {
+		char **temp = (char**)malloc(sizeof(char*)*countofpipe);
+		int i=0;
+
+		while(index<nofargs && strcmp(argv[index],"S") != 0) {
+			temp[i] = (char*)malloc(sizeof(char)*MAX_SIZE);
+			strcpy(temp[i],argv[index]);
+			// printf("%s\n",temp[i]);
+			i++;
+			index++;
+		}
+
+		index++;
+		temp[i]=NULL;
+		char *x = getenv ("PATH");
+		char *p = getfile(x,temp[0]);
+		if(fork()==0) {
+
+			if(count!=0) {
+
+				close(temppipe[1]);
+				// char* b = (char*)malloc(sizeof(char)*MAX_SIZE);
+				// int vl = read(temppipe[0],b,MAX_SIZE);
+				// b[vl] = '\0';
+				// dup2(outfd,1);
+				// printf("((-%s-))\n",b);
+				dup2(temppipe[0],0);
+				close(temppipe[0]);
+			}
+			dup2(fd[1],1);
+			execv(p,temp);
+		} else {
+			if(count!=0) {
+				close(temppipe[0]);
+				write(temppipe[1], tempdata, MAX_SIZE);
+				close(temppipe[1]);
+				shm_unlink(name);
+				shm_fd = shm_open(name, O_CREAT | O_RDWR, 0666);
+			    ftruncate(shm_fd, MAX_SIZE);
+			    ptr = mmap(0, MAX_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+			}
 			wait(NULL);
-			prev_index = index;
+			char *buffer = (char*)malloc(sizeof(char)*MAX_SIZE);
+			int v = read(fd[0],buffer,MAX_SIZE);
+			buffer[v]='\0';
+			// dup2(outfd,1);
+			// printf("(()%d)\n",v);
+			sprintf(ptr, "%s\n", buffer);
+
+
 		}
+		count++;
 	}
+	dup2(infd,0);
+	dup2(outfd,1);
+
+	printf("%s",(char*)ptr);
+	fflush(stdout);
+	shm_unlink(name);
+
 	exit(0);
 
 }
@@ -447,49 +508,96 @@ void doubleshm(char *path1,char **argv,int nofargs){
 }
 void messageQueuePipe(char *completepath,char *path,char **argv,int nofargs) {
 
+	const char* name = "mqpipe";
 	int countofpipe=0;
 	for(int i=0;i<nofargs;i++) {//counting number of pipes
 		if(strcmp(argv[i],"#") == 0) {
 			countofpipe++;
 		}
+		// printf("%s\n",argv[i]);
 	}
+	int prev_index=-1;
+	int index=0;
+	key_t key;
+    int msgid;
 
-		int p[countofpipe][2];
-		for(int i=0;i<countofpipe;i++)//create that many pipes
-			pipe(p[i]);
-		int prev_index=-1;
-		int index;
+    // ftok to generate unique key
+    key = ftok("progfile", 65);
+    msgid = msgget(key, 0666 | IPC_CREAT);
+	message m;
+	m.mesg_type = 1;
 
-	for(int i=0;i<=countofpipe;i++) {
-		if(i!=countofpipe)
-			index = strinarr(argv,"#",nofargs,prev_index+1);
-		else
-			index = nofargs;
+	int count=0;
+	int infd = dup(0);
+	int outfd = dup(1);
+	int fd[2];
+	pipe(fd);
+	int temppipe[2];
+	char* tempdata = (char*)malloc(sizeof(char)*MAX_SIZE);
+	while(count<=countofpipe) {
 
-		char *path1 = getfile(completepath,argv[prev_index+1]);
-		char **argv1 = subarray(argv,prev_index+1,index-1);
-		if(fork()==0) {//child
-			if(i!=0) {//read from prev pipe
-				job *j=(job *)malloc(sizeof(job));
-				j->pid=getpid();
-				insert_job(j);
-				dup2(p[i-1][0],0);
-				close(p[i-1][1]);
-			}
-			if(i!=countofpipe) {//write to next pipe
-				dup2(p[i][1],1);
-			}
-			parsecommand(completepath,path1,argv1,index-prev_index-1);
+		if(count!=0) {
+			pipe(temppipe);
+			message temp;
+		    msgrcv(msgid, &temp, sizeof(temp), 1, 0);
+			strcpy(tempdata,temp.mesg_text);
 		}
-		else {
-			if(i!=0){//close the pipe_w for child to read
-				close(p[i-1][0]);
-				close(p[i-1][1]);
+		char **temp = (char**)malloc(sizeof(char*)*countofpipe);
+		int i=0;
+
+		while(index<nofargs && strcmp(argv[index],"#") != 0) {
+			temp[i] = (char*)malloc(sizeof(char)*MAX_SIZE);
+			strcpy(temp[i],argv[index]);
+			// printf("%s\n",temp[i]);
+			i++;
+			index++;
+		}
+
+		index++;
+		temp[i]=NULL;
+		char *x = getenv ("PATH");
+		char *p = getfile(x,temp[0]);
+		if(fork()==0) {
+
+			if(count!=0) {
+
+				close(temppipe[1]);
+				// char* b = (char*)malloc(sizeof(char)*MAX_SIZE);
+				// int vl = read(temppipe[0],b,MAX_SIZE);
+				// b[vl] = '\0';
+				// dup2(outfd,1);
+				// printf("((-%s-))\n",b);
+				dup2(temppipe[0],0);
+				close(temppipe[0]);
+			}
+			dup2(fd[1],1);
+			execv(p,temp);
+		} else {
+			if(count!=0) {
+				close(temppipe[0]);
+				write(temppipe[1], tempdata, MAX_SIZE);
+				close(temppipe[1]);
 			}
 			wait(NULL);
-			prev_index = index;
+			char *buffer = (char*)malloc(sizeof(char)*MAX_SIZE);
+			int v = read(fd[0],buffer,MAX_SIZE);
+			buffer[v]='\0';
+			strcpy(m.mesg_text, buffer);
+			// dup2(outfd,1);
+			// printf("(()%d)\n",v);
+    		msgsnd(msgid, &m, sizeof(m), 0);
+
 		}
+		count++;
 	}
+	dup2(infd,0);
+	dup2(outfd,1);
+
+	message temp;
+	msgrcv(msgid, &temp, sizeof(temp), 1, 0);
+	printf("%s",temp.mesg_text);
+	fflush(stdout);
+    msgctl(msgid, IPC_RMID, NULL);
 	exit(0);
 
 }
