@@ -80,7 +80,8 @@ typedef struct {
 } node;
 
 int main() {
-
+    char run_cwd[MAX_SIZE];
+    getcwd(run_cwd, sizeof(run_cwd));
     FILE *fp;
     char *buff;
     buff = (char*)malloc(sizeof(char)*255);
@@ -120,8 +121,8 @@ int main() {
             break;
         }
     }
-    idx=1;
-    printf("This is N%d\n",idx+1);
+    // idx=1;     // To run on same machine, manually set the idx to 1 since the code doesn't allow one-to-many name-to-ip
+    printf("This is node N%d\n",idx+1);
 
 
 
@@ -137,7 +138,14 @@ int main() {
     else
         printf("Socket successfully created..\n");
     bzero(&servaddr, sizeof(servaddr));
-
+    int opt = 1;
+    // Forcefully attaching socket to the port 8080
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                                                  &opt, sizeof(opt)))
+    {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
     // assign IP, PORT
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -177,10 +185,17 @@ int main() {
         char *msg;
         msg = (char*)malloc(sizeof(char)*MAX_SIZE);
         getcwd(cwd, sizeof(cwd));
-        printf("%s$\n",cwd);
+        printf("Current Working Directory: %s$\n",cwd);
         char *temppipe = (char*)malloc(sizeof(char)*2);
 
         int pipeval = read(connfd,temppipe,2);
+        if(pipeval==0) {
+            printf("Client terminated\n---------------------------------------------------\n");
+            // sleep(10);
+            chdir(run_cwd);
+            char *args[]={"bash","run.sh","clustershell_server",NULL};
+            execvp(args[0],args);
+        }
         // while(pipeval<=0) {
         //     printf("%d\n",pipeval);
         //     pipeval = read(connfd,temppipe,2);
@@ -195,9 +210,9 @@ int main() {
         }
 
         int val = read(connfd , msg, MAX_SIZE);
-        printf("Bytes read: %d\n",val);
+        // printf("Bytes read: %d\n",val);
         msg[val]='\0';
-        printf("Msg received: %s\n",msg);
+        // printf("Msg received: %s\n",msg);
         int count=2;
         for(int i=0;msg[i]!='\0';i++) {
             if(msg[i]==' ') {
@@ -267,21 +282,7 @@ int main() {
             exit(0);
         }
     }
-    // char** arg = (char**)malloc(sizeof(char*)*2);
-    // arg[2] = NULL;
-    // arg[0] = (char*)malloc(sizeof(char)*5);
-    // arg[1] = (char*)malloc(sizeof(char)*10);
-    // strcpy(arg[0],"cd");
-    // strcpy(arg[1],"../..");
-    // execvp(arg[0],arg);
-    // arg[1]=NULL;
-    // chdir("../..");
-    // strcpy(arg[0],"ls");
-    // execvp(arg[0],arg);
 
-
-    // printf("HOME : %s\n", getenv("HOME"));
-	// system(buf);
 
     return 0;
 }

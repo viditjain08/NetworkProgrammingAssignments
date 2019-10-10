@@ -116,7 +116,13 @@ void initializesockets() {
             printf("socket creation failed...\n");
             exit(0);
         }
-
+        int opt=1;
+        if (setsockopt(sockfds[i], SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                                                      &opt, sizeof(opt)))
+        {
+            perror("setsockopt");
+            exit(EXIT_FAILURE);
+        }
 
     }
     // sleep(10);
@@ -289,6 +295,9 @@ void executeshell(char* msg) {
         }
         return;
     }
+    if(strcmp(msg,"exit")==0) {
+        exit(0);
+    }
     char *x = (char*)malloc(sizeof(char)*MAX_SIZE);
     strcpy(x,msg);
     int ispipe = checkpipe(x);
@@ -354,6 +363,7 @@ void executeshell(char* msg) {
                     char *buf = (char*)malloc(sizeof(char)*MAX_SIZE);
                     int val = read(fd[0],buf,MAX_SIZE);
                     buf[val] = '\0';
+                    buf[val+1] = '\n';
                     close(temppipe[0]);
                     write(temppipe[1], buf, strlen(buf));
                     close(temppipe[1]);
@@ -436,7 +446,7 @@ int main() {
         }
     }
     list[idx].active = 1;
-    printf("This is N%d\n",idx+1);
+    printf("This is node N%d\n",idx+1);
 
     if(fork()>0) {
         initializesockets();
