@@ -14,12 +14,102 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include<pthread.h>
+
 #define MAX_SIZE 1024
 #define PORT2 8082
 #define PORT3 8084
 #define SA struct sockaddr
 
 int clientfd,clientconn;
+
+char rbuf1[2*MAX_SIZE];
+char rbuf2[2*MAX_SIZE];
+int start1=0,start2=0,bufsel=0;
+int cur1=0,cur2=0,cursel=0;
+void copyToString(char *buf) {
+    if(cursel==0) {
+        while(start1<MAX_SIZE && cur1>=start1);
+        int i=0;
+        // printf("(%s)\n",rbuf1+cur1);
+
+        while(rbuf1[cur1]!='\0') {
+            buf[i] = rbuf1[cur1];
+            i++;
+            cur1++;
+            if(cur1>=start1 && start1>MAX_SIZE) {
+                cursel=1;
+                copyToString(buf+i);
+                return;
+            }
+            while(cur1>=start1);
+        }
+        buf[i]='\0';
+        cur1++;
+        cur2=0;
+        if(cur1>=start1 && start1>MAX_SIZE) {
+            cursel=1;
+            // printf("fsbjbvvbkd7n-%d\n",start2);
+        }
+    } else {
+        while(start2<MAX_SIZE && cur2>=start2);
+
+        int i=0;
+        // printf("(-%s-)\n",rbuf2+cur2);
+
+        while(rbuf2[cur2]!='\0') {
+            buf[i] = rbuf2[cur2];
+            i++;
+            cur2++;
+            if(cur2>=start2 && start2>MAX_SIZE) {
+                cursel=0;
+                copyToString(buf+i);
+                return;
+            }
+            while(cur2>=start2);
+        }
+        buf[i]='\0';
+        cur2++;
+        cur1=0;
+        if(cur2>=start2 && start2>MAX_SIZE) {
+            cursel=0;
+        }
+    }
+    // printf("String: %s\n",buf);
+}
+void *readfromClient(void *vargp) {
+    int n;
+    while(1) {
+        if(bufsel==0 && start1>MAX_SIZE) {
+            bufsel=1;
+            start2=0;
+        } else if(bufsel==1 && start2>MAX_SIZE) {
+            bufsel=0;
+            start1=0;
+        }
+        if(bufsel==0)
+            n = read(clientconn, rbuf1+start1, sizeof(rbuf1)-start1);
+        else
+            n = read(clientconn, rbuf2+start2, sizeof(rbuf2)-start2);
+        if(n<0) {
+            if(errno != EWOULDBLOCK) {
+                printf("Read error\n");
+            }
+        }
+        else if(n==0) {
+
+        } else {
+            if(bufsel==0) {
+                start1+=n;
+            } else {
+                start2+=n;
+            }
+            printf("CLIENT RECIEVED: %d\n", n);
+        }
+    }
+}
+
 void connectToClient() {
     struct sockaddr_in servaddr, cli;
 
@@ -55,7 +145,7 @@ void connectToClient() {
     }
     else
       printf("Server listening..\n");
-    len = sizeof(cli);
+    int len = sizeof(cli);
 
     // Accept the data packet from client and verification
     clientconn = accept(clientfd, (SA*)&cli, &len);
@@ -97,6 +187,8 @@ int main() {
     else
         printf("connected to the server..\n");
     connectToClient();
+    pthread_t thread_id;
+    pthread_create(&thread_id, NULL, readfromClient, NULL);
     while(1);
 
 }

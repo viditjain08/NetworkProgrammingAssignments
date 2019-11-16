@@ -84,29 +84,45 @@ char rbuf2[2*MAX_SIZE];
 int start1=0,start2=0,bufsel=0;
 int cur1=0,cur2=0,cursel=0;
 void copyToString(char *buf) {
-
     if(cursel==0) {
         while(start1<MAX_SIZE && cur1>=start1);
         int i=0;
+        // printf("(%s)\n",rbuf1+cur1);
+
         while(rbuf1[cur1]!='\0') {
             buf[i] = rbuf1[cur1];
             i++;
             cur1++;
+            if(cur1>=start1 && start1>MAX_SIZE) {
+                cursel=1;
+                copyToString(buf+i);
+                return;
+            }
+            while(cur1>=start1);
         }
         buf[i]='\0';
         cur1++;
         cur2=0;
         if(cur1>=start1 && start1>MAX_SIZE) {
             cursel=1;
+            // printf("fsbjbvvbkd7n-%d\n",start2);
         }
     } else {
         while(start2<MAX_SIZE && cur2>=start2);
 
         int i=0;
+        // printf("(-%s-)\n",rbuf2+cur2);
+
         while(rbuf2[cur2]!='\0') {
             buf[i] = rbuf2[cur2];
             i++;
             cur2++;
+            if(cur2>=start2 && start2>MAX_SIZE) {
+                cursel=0;
+                copyToString(buf+i);
+                return;
+            }
+            while(cur2>=start2);
         }
         buf[i]='\0';
         cur2++;
@@ -115,7 +131,7 @@ void copyToString(char *buf) {
             cursel=0;
         }
     }
-    printf("String: %s\n",buf);
+    // printf("String: %s\n",buf);
 }
 void *readfromClient(void *vargp) {
     int n;
@@ -259,10 +275,12 @@ int main()
         if(strcmp(choice,"0")==0) {
             NODE temp = cur->child;
             while(temp!=NULL) {
+                // printf("%s-",temp->name);
                 write(connfd,temp->name,strlen(temp->name));
                 write(connfd,"\n",1);
                 temp = temp->next;
             }
+            // printf("\n");
             write(connfd,"\0",1);
         } else if(strcmp(choice,"1")==0) {
             char dirname[MAX_SIZE];
@@ -276,6 +294,7 @@ int main()
                 cur->child = new;
                 lastchild = new;
             } else {
+                // printf("-%s-",lastchild->name);
                 lastchild->next = new;
                 lastchild = new;
             }
