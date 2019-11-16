@@ -210,11 +210,14 @@ int main() {
             printf("%s\n",name);
             char dir[MAX_SIZE] = "data/";
 
+            char count[10];
+            copyToString(count);
+
             char num[20];
             copyToString(num);
             printf("%s\n",num);
             strcat(dir,name);
-            if( access( dir, F_OK ) != -1 ) {
+            if(strcmp(count,"0")==0 && access( dir, F_OK ) != -1 ) {
                 int i=0;
                 char str[MAX_SIZE];
                 sprintf(str, "%s(%d)", dir,i);

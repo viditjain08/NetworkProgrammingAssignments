@@ -34,12 +34,12 @@ int cur1=0,cur2=0,cursel=0;
 
 char buffer1[MAXDATA][2*MAX_SIZE];
 char buffer2[MAXDATA][2*MAX_SIZE];
-int startptr1[MAXDATA] = {0};
-int startptr2[MAXDATA] = {0};
-int bufferselect[MAXDATA] = {0};
-int currentptr1[MAXDATA] = {0};
-int currentptr2[MAXDATA] = {0};
-int currentselect[MAXDATA] = {0};
+int startptr1[MAXDATA];
+int startptr2[MAXDATA];
+int bufferselect[MAXDATA];
+int currentptr1[MAXDATA];
+int currentptr2[MAXDATA];
+int currentselect[MAXDATA];
 
 // typedef struct node * NODE;
 // struct node {
@@ -138,6 +138,7 @@ void *readfromName(void *vargp) {
 
 void datacopyToString(char *buf, int i) {
     if(currentselect[i]==0) {
+
         while(startptr1[i]<MAX_SIZE && currentptr1[i]>=startptr1[i]);
         int idx=0;
         // printf("(%s)\n",rbuf1+cur1);
@@ -153,6 +154,7 @@ void datacopyToString(char *buf, int i) {
             }
             while(currentptr1[i]>=startptr1[i]);
         }
+
         buf[idx]='\0';
         currentptr1[i]++;
         currentptr2[i]=0;
@@ -161,6 +163,8 @@ void datacopyToString(char *buf, int i) {
             // printf("fsbjbvvbkd7n-%d\n",start2);
         }
     } else {
+        // printf("jain%d-%d\n",startptr1[i],currentptr1[i]);
+
         while(startptr2[i]<MAX_SIZE && currentptr2[i]>=startptr2[i]);
 
         int idx=0;
@@ -290,7 +294,7 @@ void transfertoBigFS(char* file_name) {
     long int res = ftell(fp);
     int no_of_parts = 1+res/(BLOCKSIZE);
 
-
+    printf("No of parts: %d\n",no_of_parts);
     char strparts[10];
     sprintf(strparts, "%d", no_of_parts);
     write(sockfd,strparts,strlen(strparts)+1);
@@ -318,21 +322,50 @@ void transfertoBigFS(char* file_name) {
         strcpy(dir,found);
         found = strsep(&file_name,"/");
     }
-
+    int idx=0;
     for(int i=0;i<no_of_parts;i++) {
         write(datafds[ptr],"0\0",2);
         int n = read(fd, temp_buf, sizeof(temp_buf));
-        write(datafds[ptr],temp_buf,n);
+        int write_count=0;
+        fd_set rset, wset;
+
+        while(write_count<n) {
+            FD_ZERO(&rset);
+            FD_ZERO(&wset);
+            FD_SET(datafds[ptr], &wset);
+            select(datafds[ptr]+1,&rset,&wset,NULL,NULL);
+            if(FD_ISSET(datafds[ptr],&wset)) {
+                int x;
+                if(write_count+(BLOCKSIZE/1000)>=n)
+                    x = write(datafds[ptr],temp_buf+write_count,n-write_count);
+                else
+                    x = write(datafds[ptr],temp_buf+write_count,BLOCKSIZE/1000);
+                write_count+=(BLOCKSIZE)/1000;
+                // printf("Write count: %d-%d-%d\n",write_count,x,errno);
+            }
+
+        }
+
+        // int x = write(datafds[ptr],temp_buf,n);
         write(datafds[ptr],"\0",1);
+        // printf("-%d-\n",ret);
+
         write(datafds[ptr],dir,1+strlen(dir));
+
         // write(datafds[ptr],file_name,strlen(file_name));
         char strcount[10];
         sprintf(strcount, "%d", count);
         write(datafds[ptr],strcount,strlen(strcount));
         write(datafds[ptr],"\0",1);
 
+        sprintf(strcount, "%d", idx);
+        write(datafds[ptr],strcount,strlen(strcount));
+        write(datafds[ptr],"\0",1);
+
         char data_loc[MAX_SIZE];
-        datacopyToString(data_loc, i);
+
+        datacopyToString(data_loc, ptr);
+
         if(i==0 && count==0) {
             write(sockfd,data_loc,strlen(data_loc)+1);
         }
@@ -340,6 +373,8 @@ void transfertoBigFS(char* file_name) {
             count++;
         }
         ptr = (ptr+1)%(no_of_dataservers);
+        idx++;
+
     }
 }
 int main() {
@@ -348,6 +383,14 @@ int main() {
     // strcpy(filestart->name,"home");
     // filecur = filestart;
 
+    for(int i=0;i<MAXDATA;i++) {
+        startptr1[i]=0;
+        startptr2[i]=0;
+        bufferselect[i]=0;
+        currentptr1[i]=0;
+        currentptr2[i]=0;
+        currentselect[i]=0;
+    }
     struct sockaddr_in servaddr, cli;
 
     // socket create and varification
@@ -433,9 +476,23 @@ int main() {
                 printf("Directory not present\n");
             }
         } else if(strcmp(found,"cat")==0) {
+
           printf("Printing File\n");
+
         } else if(strcmp(found,"mv")==0) {
+
           printf("Moving File\n");
+          write(sockfd,"4\0",2);
+          found = strsep(&command," ");
+          write(sockfd,found,strlen(found)+1);
+          found = strsep(&command," ");
+          write(sockfd,found,strlen(found)+1);
+          char temp[MAX_SIZE];
+          copyToString(temp);
+          if(strcmp(temp,"1")==0) {
+              printf("Invalid move\n");
+              continue;
+          }
         } else if(strcmp(found,"cp")==0) {
           printf("Copying file\n");
         } else if(strcmp(found,"rm")==0) {
