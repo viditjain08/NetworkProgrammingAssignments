@@ -26,6 +26,7 @@ struct node {
     NODE child;
     NODE parent;
     char type[20];
+    int no_of_chunks;
 };
 
 // Driver function
@@ -294,6 +295,7 @@ int main()
             new->next = NULL;
             new->child = NULL;
             new->parent = cur;
+            new->no_of_chunks = 0;
             strcpy(new->name,dirname);
             strcpy(new->type,"directory");
             if(cur->child==NULL) {
@@ -356,6 +358,7 @@ int main()
                 write(connfd,"0\0",2);
             } else {
                 write(connfd,"1\0",2);
+                continue;
             }
             NODE new = (NODE)malloc(sizeof(struct node));
             new->next = NULL;
@@ -364,6 +367,10 @@ int main()
             strcpy(new->type,"file");
 
             strcpy(new->name,filename);
+            char no_of_chunks[20];
+            copyToString(no_of_chunks);
+            int chunks = atoi(no_of_chunks);
+            new->no_of_chunks = chunks;
             if(cur->child==NULL) {
                 cur->child = new;
                 lastchild = new;
@@ -372,7 +379,7 @@ int main()
                 lastchild->next = new;
                 lastchild = new;
             }
-            temp = new;
+            temp = new->parent;
             char dir[MAX_SIZE] = "";
             int j=0;
             while(temp!=NULL) {

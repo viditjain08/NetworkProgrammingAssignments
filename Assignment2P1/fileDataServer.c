@@ -204,13 +204,28 @@ int main() {
             char temp_buf[2*BLOCKSIZE];
             copyToString(temp_buf);
             // printf("%s\n",temp_buf);
+            char *dirname = (char*)malloc(sizeof(char)*MAX_SIZE);
+            copyToString(dirname);
+            // printf("%s\n",dirname);
             char name[MAX_SIZE];
             copyToString(name);
+            // printf("%s\n",name);
             char dir[MAX_SIZE] = "data/";
-            strcat(dir, name);
-            printf("%s\n",dir);
-
-            FILE *fp = fopen(dir, "w");
+            strcat(dir, dirname);
+            strcpy(dirname,dir);
+            // printf("%s\n",dir);
+            char *found;
+            found = strsep(&dirname,"/");
+            char newdir[MAX_SIZE] = "";
+            while(found!=NULL) {
+                strcat(newdir,found);
+                mkdir(newdir,0777);
+                strcat(newdir,"/");
+                found = strsep(&dirname,"/");
+            }
+            // printf("%s\n",newdir);
+            strcat(newdir,name);
+            FILE *fp = fopen(newdir, "w");
 
             fputs(temp_buf, fp);
             fclose(fp);

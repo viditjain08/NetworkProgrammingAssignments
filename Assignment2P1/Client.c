@@ -289,6 +289,12 @@ void transfertoBigFS(char* file_name) {
     // calculating the size of the file
     long int res = ftell(fp);
     int no_of_parts = 1+res/(BLOCKSIZE);
+
+
+    char strparts[10];
+    sprintf(strparts, "%d", no_of_parts);
+    write(sockfd,strparts,strlen(strparts)+1);
+
     int ptr=0;
     fseek(fp, 0L, SEEK_SET);
     char temp_buf[BLOCKSIZE];
@@ -310,7 +316,8 @@ void transfertoBigFS(char* file_name) {
         int n = read(fd, temp_buf, sizeof(temp_buf));
         write(datafds[ptr],temp_buf,n);
         write(datafds[ptr],"\0",1);
-        write(datafds[ptr],dir,strlen(dir));
+        write(datafds[ptr],dir,1+strlen(dir));
+        write(datafds[ptr],file_name,strlen(file_name));
         char strcount[10];
         sprintf(strcount, "%d", count);
         write(datafds[ptr],strcount,strlen(strcount));
