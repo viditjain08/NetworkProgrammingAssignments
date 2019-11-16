@@ -16,7 +16,10 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include<pthread.h>
+#include <sys/stat.h>
+#include<unistd.h>
 
+#define BLOCKSIZE 1024000
 #define MAX_SIZE 1024
 #define PORT2 8082
 #define PORT3 8084
@@ -24,13 +27,13 @@
 
 int clientfd,clientconn;
 
-char rbuf1[2*MAX_SIZE];
-char rbuf2[2*MAX_SIZE];
+char rbuf1[2*BLOCKSIZE];
+char rbuf2[2*BLOCKSIZE];
 int start1=0,start2=0,bufsel=0;
 int cur1=0,cur2=0,cursel=0;
 void copyToString(char *buf) {
     if(cursel==0) {
-        while(start1<MAX_SIZE && cur1>=start1);
+        while(start1<BLOCKSIZE && cur1>=start1);
         int i=0;
         // printf("(%s)\n",rbuf1+cur1);
 
@@ -38,7 +41,7 @@ void copyToString(char *buf) {
             buf[i] = rbuf1[cur1];
             i++;
             cur1++;
-            if(cur1>=start1 && start1>MAX_SIZE) {
+            if(cur1>=start1 && start1>BLOCKSIZE) {
                 cursel=1;
                 copyToString(buf+i);
                 return;
@@ -48,12 +51,12 @@ void copyToString(char *buf) {
         buf[i]='\0';
         cur1++;
         cur2=0;
-        if(cur1>=start1 && start1>MAX_SIZE) {
+        if(cur1>=start1 && start1>BLOCKSIZE) {
             cursel=1;
             // printf("fsbjbvvbkd7n-%d\n",start2);
         }
     } else {
-        while(start2<MAX_SIZE && cur2>=start2);
+        while(start2<BLOCKSIZE && cur2>=start2);
 
         int i=0;
         // printf("(-%s-)\n",rbuf2+cur2);
@@ -62,7 +65,7 @@ void copyToString(char *buf) {
             buf[i] = rbuf2[cur2];
             i++;
             cur2++;
-            if(cur2>=start2 && start2>MAX_SIZE) {
+            if(cur2>=start2 && start2>BLOCKSIZE) {
                 cursel=0;
                 copyToString(buf+i);
                 return;
@@ -72,7 +75,7 @@ void copyToString(char *buf) {
         buf[i]='\0';
         cur2++;
         cur1=0;
-        if(cur2>=start2 && start2>MAX_SIZE) {
+        if(cur2>=start2 && start2>BLOCKSIZE) {
             cursel=0;
         }
     }
@@ -81,10 +84,10 @@ void copyToString(char *buf) {
 void *readfromClient(void *vargp) {
     int n;
     while(1) {
-        if(bufsel==0 && start1>MAX_SIZE) {
+        if(bufsel==0 && start1>BLOCKSIZE) {
             bufsel=1;
             start2=0;
-        } else if(bufsel==1 && start2>MAX_SIZE) {
+        } else if(bufsel==1 && start2>BLOCKSIZE) {
             bufsel=0;
             start1=0;
         }
@@ -187,8 +190,35 @@ int main() {
     else
         printf("connected to the server..\n");
     connectToClient();
+    int check;
+    char* dirname = "data";
+    check = mkdir(dirname,0777);
+
     pthread_t thread_id;
     pthread_create(&thread_id, NULL, readfromClient, NULL);
-    while(1);
+
+    while(1) {
+        char choice[MAX_SIZE];
+        copyToString(choice);
+        if(strcmp(choice, "0")==0) {
+            char temp_buf[2*BLOCKSIZE];
+            copyToString(temp_buf);
+            // printf("%s\n",temp_buf);
+            char name[MAX_SIZE];
+            copyToString(name);
+            char dir[MAX_SIZE] = "data/";
+            strcat(dir, name);
+            printf("%s\n",dir);
+
+            FILE *fp = fopen(dir, "w");
+
+            fputs(temp_buf, fp);
+            fclose(fp);
+
+
+        }
+
+
+    }
 
 }

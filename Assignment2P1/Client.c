@@ -16,11 +16,12 @@
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <pthread.h>
-
 #define MAX_SIZE 1024
 #define PORT1 8080
 #define PORT3 8084
 #define MAXDATA 30
+#define BLOCKSIZE 1024000
+
 #define SA struct sockaddr
 char dataips[MAXDATA][MAX_SIZE];
 int sockfd, connfd;
@@ -39,6 +40,14 @@ int bufferselect[MAXDATA] = {0};
 int currentptr1[MAXDATA] = {0};
 int currentptr2[MAXDATA] = {0};
 int currentselect[MAXDATA] = {0};
+
+// typedef struct node * NODE;
+// struct node {
+//     char name[256];
+//     NODE next;
+// };
+// NODE filestart;
+// NODE filecur;
 void copyToString(char *buf) {
     if(cursel==0) {
         while(start1<MAX_SIZE && cur1>=start1);
@@ -255,7 +264,68 @@ void connectToData() {
 
     }
 }
+
+// int checkfileexists(char* file_name) {
+//     NODE temp = filestart;
+//     while(temp!=NULL) {
+//         if(strcmp(temp->name, file_name)==0) {
+//             return 1;
+//         }
+//         temp = temp->next;
+//     }
+//     return 0;
+// }
+void transfertoBigFS(char* file_name) {
+    FILE* fp = fopen(file_name, "r");
+
+    // checking if the file exist or not
+    if (fp == NULL) {
+        printf("File Not Found!\n");
+        return;
+    }
+
+    fseek(fp, 0L, SEEK_END);
+
+    // calculating the size of the file
+    long int res = ftell(fp);
+    int no_of_parts = 1+res/(BLOCKSIZE);
+    int ptr=0;
+    fseek(fp, 0L, SEEK_SET);
+    char temp_buf[BLOCKSIZE];
+    int fd = fileno(fp);
+    // printf("Bytes read-%d\n",n);
+    // while(checkfileexists(file_name)==1) {
+    //     strcat(file_name, "new");
+    // }
+    // NODE new = (NODE)malloc(sizeof(struct node));
+    // new->next = NULL;
+    // strcpy(new->name,file_name);
+    // filecur->next = new;
+    // filecur = new;
+    int count=0;
+    char dir[MAX_SIZE];
+    copyToString(dir);
+    for(int i=0;i<no_of_parts;i++) {
+        write(datafds[ptr],"0\0",2);
+        int n = read(fd, temp_buf, sizeof(temp_buf));
+        write(datafds[ptr],temp_buf,n);
+        write(datafds[ptr],"\0",1);
+        write(datafds[ptr],dir,strlen(dir));
+        char strcount[10];
+        sprintf(strcount, "%d", count);
+        write(datafds[ptr],strcount,strlen(strcount));
+        write(datafds[ptr],"\0",1);
+        if(ptr==(no_of_dataservers-1)) {
+            count++;
+        }
+        ptr = (ptr+1)%(no_of_dataservers);
+    }
+}
 int main() {
+    // filestart = (NODE)malloc(sizeof(struct node));
+    // filestart->next = NULL;
+    // strcpy(filestart->name,"home");
+    // filecur = filestart;
 
     struct sockaddr_in servaddr, cli;
 
@@ -332,6 +402,15 @@ int main() {
           write(sockfd,"1\0",2);
           found = strsep(&command," ");
           write(sockfd,found,strlen(found)+1);
+        } else if(strcmp(found,"cd")==0) {
+            write(sockfd,"2\0",2);
+            found = strsep(&command," ");
+            write(sockfd,found,strlen(found)+1);
+            char choice[MAX_SIZE];
+            copyToString(choice);
+            if(strcmp(choice,"1")==0) {
+                printf("Directory not present\n");
+            }
         } else if(strcmp(found,"cat")==0) {
           printf("Printing File\n");
         } else if(strcmp(found,"mv")==0) {
@@ -342,6 +421,18 @@ int main() {
           printf("Removing file\n");
         } else if(strcmp(found,"tobigfs")==0) {
           printf("Transferring to bigfs\n");
+          write(sockfd,"3\0",2);
+
+
+          found = strsep(&command," ");
+          write(sockfd,found,strlen(found)+1);
+          char temp[MAX_SIZE];
+          copyToString(temp);
+          if(strcmp(temp, "1")==0) {
+              printf("File/Directory with the same name exists\n");
+              continue;
+          }
+          transfertoBigFS(found);
         } else if(strcmp(found,"frombigfs")==0) {
           printf("Transferring from bigfs\n");
         } else if(strcmp(found,"exit")==0) {

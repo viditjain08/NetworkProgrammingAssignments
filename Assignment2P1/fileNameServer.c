@@ -24,6 +24,8 @@ struct node {
     char name[256];
     NODE next;
     NODE child;
+    NODE parent;
+    char type[20];
 };
 
 // Driver function
@@ -265,6 +267,8 @@ int main()
     NODE home = (NODE)malloc(sizeof(struct node));
     home->child = NULL;
     strcpy(home->name,"home");
+    strcpy(home->type,"directory");
+    home->parent = NULL;
     home->next = NULL;
     NODE cur = home;
     NODE lastchild = NULL;
@@ -289,7 +293,9 @@ int main()
             NODE new = (NODE)malloc(sizeof(struct node));
             new->next = NULL;
             new->child = NULL;
+            new->parent = cur;
             strcpy(new->name,dirname);
+            strcpy(new->type,"directory");
             if(cur->child==NULL) {
                 cur->child = new;
                 lastchild = new;
@@ -298,6 +304,89 @@ int main()
                 lastchild->next = new;
                 lastchild = new;
             }
+        } else if(strcmp(choice,"2")==0) {
+            char *dirname = (char*)malloc(sizeof(char)*MAX_SIZE);
+            copyToString(dirname);
+            char *found;
+            found = strsep(&dirname,"/");
+
+            int flag=0;
+            NODE temp_cur = cur;
+            while(found!=NULL) {
+
+                NODE temp=temp_cur->child;
+                while(temp!=NULL) {
+                    if(strcmp(temp->name,found)==0) {
+                        if(strcmp(temp->type,"directory")!=0) {
+                            flag=1;
+                            break;
+                        }
+                        temp_cur = temp;
+                        break;
+                    }
+                    temp=temp->next;
+                }
+                if(temp==NULL || flag==1) {
+                    flag=1;
+                    break;
+                }
+                found = strsep(&dirname,"/");
+
+            }
+            if(flag==0) {
+                cur=temp_cur;
+                write(connfd,"0\0",2);
+            } else {
+                write(connfd,"1\0",2);
+            }
+
+        } else if(strcmp(choice,"3")==0) {
+            char filename[MAX_SIZE];
+            copyToString(filename);
+            NODE temp = cur->child;
+            int flag = 0;
+            while(temp!=NULL) {
+                if(strcmp(temp->name,filename)==0) {
+                    flag=1;
+                    break;
+                }
+                temp=temp->next;
+            }
+            if(flag==0) {
+                write(connfd,"0\0",2);
+            } else {
+                write(connfd,"1\0",2);
+            }
+            NODE new = (NODE)malloc(sizeof(struct node));
+            new->next = NULL;
+            new->child = NULL;
+            new->parent = cur;
+            strcpy(new->type,"file");
+
+            strcpy(new->name,filename);
+            if(cur->child==NULL) {
+                cur->child = new;
+                lastchild = new;
+            } else {
+                // printf("-%s-",lastchild->name);
+                lastchild->next = new;
+                lastchild = new;
+            }
+            temp = new;
+            char dir[MAX_SIZE] = "";
+            int j=0;
+            while(temp!=NULL) {
+                char t[MAX_SIZE];
+                strcpy(t,temp->name);
+                if(j!=0)
+                    strcat(t,"/");
+                strcat(t,dir);
+                strcpy(dir,t);
+                // printf("%s\n",dir);
+                temp=temp->parent;
+                j++;
+            }
+            write(connfd,dir,strlen(dir)+1);
         }
     }
 
