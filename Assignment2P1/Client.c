@@ -294,7 +294,6 @@ void transfertoBigFS(char* file_name) {
     char strparts[10];
     sprintf(strparts, "%d", no_of_parts);
     write(sockfd,strparts,strlen(strparts)+1);
-
     int ptr=0;
     fseek(fp, 0L, SEEK_SET);
     char temp_buf[BLOCKSIZE];
@@ -309,19 +308,34 @@ void transfertoBigFS(char* file_name) {
     // filecur->next = new;
     // filecur = new;
     int count=0;
+    // char dir[MAX_SIZE];
+    // copyToString(dir);
+
+    char *found;
     char dir[MAX_SIZE];
-    copyToString(dir);
+    found = strsep(&file_name,"/");
+    while(found!=NULL) {
+        strcpy(dir,found);
+        found = strsep(&file_name,"/");
+    }
+
     for(int i=0;i<no_of_parts;i++) {
         write(datafds[ptr],"0\0",2);
         int n = read(fd, temp_buf, sizeof(temp_buf));
         write(datafds[ptr],temp_buf,n);
         write(datafds[ptr],"\0",1);
         write(datafds[ptr],dir,1+strlen(dir));
-        write(datafds[ptr],file_name,strlen(file_name));
+        // write(datafds[ptr],file_name,strlen(file_name));
         char strcount[10];
         sprintf(strcount, "%d", count);
         write(datafds[ptr],strcount,strlen(strcount));
         write(datafds[ptr],"\0",1);
+
+        char data_loc[MAX_SIZE];
+        datacopyToString(data_loc, i);
+        if(i==0 && count==0) {
+            write(sockfd,data_loc,strlen(data_loc)+1);
+        }
         if(ptr==(no_of_dataservers-1)) {
             count++;
         }
@@ -433,6 +447,7 @@ int main() {
 
           found = strsep(&command," ");
           write(sockfd,found,strlen(found)+1);
+
           char temp[MAX_SIZE];
           copyToString(temp);
           if(strcmp(temp, "1")==0) {

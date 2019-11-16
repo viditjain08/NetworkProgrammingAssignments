@@ -27,6 +27,7 @@ struct node {
     NODE parent;
     char type[20];
     int no_of_chunks;
+    char loc_name[MAX_SIZE];
 };
 
 // Driver function
@@ -343,12 +344,21 @@ int main()
             }
 
         } else if(strcmp(choice,"3")==0) {
-            char filename[MAX_SIZE];
+            char *filename = (char*)malloc(sizeof(char)*MAX_SIZE);
             copyToString(filename);
+            char *found;
+            char found2[MAX_SIZE];
+            found = strsep(&filename,"/");
+            while(found!=NULL) {
+                strcpy(found2,found);
+                found = strsep(&filename,"/");
+            }
+            // strcpy(filename,found2);
+            // printf("%s\n",found2);
             NODE temp = cur->child;
             int flag = 0;
             while(temp!=NULL) {
-                if(strcmp(temp->name,filename)==0) {
+                if(strcmp(temp->name,found2)==0) {
                     flag=1;
                     break;
                 }
@@ -366,7 +376,7 @@ int main()
             new->parent = cur;
             strcpy(new->type,"file");
 
-            strcpy(new->name,filename);
+            strcpy(new->name,found2);
             char no_of_chunks[20];
             copyToString(no_of_chunks);
             int chunks = atoi(no_of_chunks);
@@ -379,21 +389,24 @@ int main()
                 lastchild->next = new;
                 lastchild = new;
             }
-            temp = new->parent;
-            char dir[MAX_SIZE] = "";
-            int j=0;
-            while(temp!=NULL) {
-                char t[MAX_SIZE];
-                strcpy(t,temp->name);
-                if(j!=0)
-                    strcat(t,"/");
-                strcat(t,dir);
-                strcpy(dir,t);
-                // printf("%s\n",dir);
-                temp=temp->parent;
-                j++;
-            }
-            write(connfd,dir,strlen(dir)+1);
+            copyToString(found2);
+            strcpy(new->loc_name, found2);
+            printf("File Location: %s\n",found2);
+            // temp = new->parent;
+            // char dir[MAX_SIZE] = "";
+            // int j=0;
+            // while(temp!=NULL) {
+            //     char t[MAX_SIZE];
+            //     strcpy(t,temp->name);
+            //     if(j!=0)
+            //         strcat(t,"/");
+            //     strcat(t,dir);
+            //     strcpy(dir,t);
+            //     // printf("%s\n",dir);
+            //     temp=temp->parent;
+            //     j++;
+            // }
+            // write(connfd,dir,strlen(dir)+1);
         }
     }
 

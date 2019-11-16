@@ -204,28 +204,34 @@ int main() {
             char temp_buf[2*BLOCKSIZE];
             copyToString(temp_buf);
             // printf("%s\n",temp_buf);
-            char *dirname = (char*)malloc(sizeof(char)*MAX_SIZE);
-            copyToString(dirname);
-            // printf("%s\n",dirname);
+
             char name[MAX_SIZE];
             copyToString(name);
-            // printf("%s\n",name);
+            printf("%s\n",name);
             char dir[MAX_SIZE] = "data/";
-            strcat(dir, dirname);
-            strcpy(dirname,dir);
-            // printf("%s\n",dir);
-            char *found;
-            found = strsep(&dirname,"/");
-            char newdir[MAX_SIZE] = "";
-            while(found!=NULL) {
-                strcat(newdir,found);
-                mkdir(newdir,0777);
-                strcat(newdir,"/");
-                found = strsep(&dirname,"/");
+
+            char num[20];
+            copyToString(num);
+            printf("%s\n",num);
+            strcat(dir,name);
+            if( access( dir, F_OK ) != -1 ) {
+                int i=0;
+                char str[MAX_SIZE];
+                sprintf(str, "%s(%d)", dir,i);
+                // printf("%s\n",str);
+                while(access(str,F_OK)!=-1) {
+                    i++;
+                    sprintf(str, "%s(%d)", dir,i);
+                }
+                strcpy(dir,str);
             }
-            // printf("%s\n",newdir);
-            strcat(newdir,name);
-            FILE *fp = fopen(newdir, "w");
+            printf("Directory: %s\n",dir);
+
+            FILE *fp = fopen(dir,"w");
+            fclose(fp);
+            write(clientconn,dir,strlen(dir)+1);
+            strcat(dir,num);
+            fp = fopen(dir, "w");
 
             fputs(temp_buf, fp);
             fclose(fp);
