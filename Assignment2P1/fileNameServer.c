@@ -37,6 +37,7 @@ int datafd;
 int dataconnfd[MAXDATA];
 struct sockaddr_in clients[MAXDATA];
 int dataptr=0;
+NODE cur;
 
 void connectToData() {
 
@@ -164,7 +165,7 @@ void *readfromClient(void *vargp) {
             } else {
                 start2+=n;
             }
-            printf("CLIENT RECIEVED: %d\n", n);
+            // printf("CLIENT RECIEVED: %d\n", n);
         }
     }
 }
@@ -231,6 +232,453 @@ void sendiptoClient() {
     write(connfd,"\0",1);
 }
 
+void listDirectory() {
+    NODE temp = cur->child;
+    while(temp!=NULL) {
+        write(connfd,temp->name,strlen(temp->name));
+        write(connfd,"\n",1);
+        temp = temp->next;
+    }
+    write(connfd,"\0",1);
+}
+
+void makeDirectory() {
+    char dirname[MAX_SIZE];
+    copyToString(dirname);
+
+    NODE new = (NODE)malloc(sizeof(struct node));
+    new->next = NULL;
+    new->child = NULL;
+    new->parent = cur;
+    new->no_of_chunks = 0;
+    strcpy(new->name,dirname);
+    strcpy(new->type,"directory");
+    if(cur->child==NULL) {
+        cur->child = new;
+    } else {
+        // printf("-%s-",lastchild->name);
+        NODE lastchild = cur->child;
+        while(lastchild->next!=NULL) {
+            lastchild=lastchild->next;
+        }
+        lastchild->next = new;
+    }
+}
+
+void changeDirectory() {
+    char *dirname = (char*)malloc(sizeof(char)*MAX_SIZE);
+    copyToString(dirname);
+    char *found;
+    found = strsep(&dirname,"/");
+
+    int flag=0;
+    NODE temp_cur = cur;
+    while(found!=NULL) {
+        if(strcmp(found,"..")==0) {
+            temp_cur = temp_cur->parent;
+            found = strsep(&dirname,"/");
+            continue;
+        } else if(strcmp(found,".")==0) {
+            found = strsep(&dirname,"/");
+            continue;
+        }
+        NODE temp=temp_cur->child;
+        while(temp!=NULL) {
+            if(strcmp(temp->name,found)==0) {
+                if(strcmp(temp->type,"directory")!=0) {
+                    flag=1;
+                    break;
+                }
+                temp_cur = temp;
+                break;
+            }
+            temp=temp->next;
+        }
+        if(temp==NULL || flag==1) {
+            flag=1;
+            break;
+        }
+        found = strsep(&dirname,"/");
+
+    }
+    if(flag==0) {
+        cur=temp_cur;
+        write(connfd,"0",2);
+    } else {
+        write(connfd,"1",2);
+    }
+}
+
+void tobigfs() {
+    char *filename = (char*)malloc(sizeof(char)*MAX_SIZE);
+    copyToString(filename);
+    char *found;
+    char found2[MAX_SIZE];
+    found = strsep(&filename,"/");
+    while(found!=NULL) {
+        strcpy(found2,found);
+        found = strsep(&filename,"/");
+    }
+
+    NODE temp = cur->child;
+    int flag = 0;
+    while(temp!=NULL) {
+        if(strcmp(temp->name,found2)==0) {
+            flag=1;
+            break;
+        }
+        temp=temp->next;
+    }
+    if(flag==0) {
+        write(connfd,"0",2);
+    } else {
+        write(connfd,"1",2);
+        return;
+    }
+    NODE new = (NODE)malloc(sizeof(struct node));
+    new->next = NULL;
+    new->child = NULL;
+    new->parent = cur;
+    strcpy(new->type,"file");
+
+    strcpy(new->name,found2);
+    char no_of_chunks[20];
+    copyToString(no_of_chunks);
+    int chunks = atoi(no_of_chunks);
+    new->no_of_chunks = chunks;
+    if(cur->child==NULL) {
+        cur->child = new;
+    } else {
+        // printf("-%s-",lastchild->name);
+        NODE lastchild = cur->child;
+        while(lastchild->next!=NULL) {
+            lastchild=lastchild->next;
+        }
+        lastchild->next = new;
+    }
+    copyToString(found2);
+    strcpy(new->loc_name, found2);
+}
+
+void catfile() {
+    char *file = (char*)malloc(sizeof(char)*MAX_SIZE);
+    copyToString(file);
+    // printf("File %s\n",file);
+    NODE temp = cur->child;
+    int flag=0;
+    while(temp!=NULL) {
+        if(strcmp(temp->name, file)==0) {
+            if(strcmp(temp->type, "file")==0) {
+                flag=1;
+                break;
+            }
+
+        }
+        temp=temp->next;
+    }
+    if(flag==0) {
+        write(connfd,"0",2);
+    } else {
+        write(connfd,"1",2);
+    }
+    write(connfd,temp->loc_name,strlen(temp->loc_name)+1);
+    char chunks[10];
+    sprintf(chunks,"%d",temp->no_of_chunks);
+    write(connfd,chunks,strlen(chunks)+1);
+}
+
+void removefile() {
+    char *file = (char*)malloc(sizeof(char)*MAX_SIZE);
+    copyToString(file);
+    // printf("File %s\n",file);
+    NODE temp = cur->child;
+    NODE prev = temp;
+    int flag=0;
+    if(temp==NULL) {
+    } else if(strcmp(prev->name,file)==0) {
+        cur->child = prev->next;
+        prev->next = NULL;
+        flag=1;
+    } else {
+        while(temp!=NULL) {
+            if(strcmp(temp->name, file)==0) {
+                if(strcmp(temp->type, "file")==0) {
+                    flag=1;
+                    prev->next = temp->next;
+                    temp->next = NULL;
+                    break;
+                }
+
+            }
+            prev=temp;
+            temp=temp->next;
+        }
+    }
+
+    if(flag==0) {
+        write(connfd,"0\0",2);
+    } else {
+        write(connfd,"1\0",2);
+    }
+    write(connfd,temp->loc_name,strlen(temp->loc_name)+1);
+    char chunks[10];
+    sprintf(chunks,"%d",temp->no_of_chunks);
+    write(connfd,chunks,strlen(chunks)+1);
+
+}
+
+void movefile() {
+    char *source = (char*)malloc(sizeof(char)*MAX_SIZE);
+    copyToString(source);
+    char *destination = (char*)malloc(sizeof(char)*MAX_SIZE);
+    copyToString(destination);
+    // printf("Source: %s\n",source);
+    // printf("Destination: %s\n",destination);
+    char *found;
+    char found2[MAX_SIZE];
+    found = strsep(&source,"/");
+    NODE temp_cur = cur;
+    int flag=0;
+    while(found!=NULL) {
+        if(strcmp(found,"..")==0) {
+            temp_cur = temp_cur->parent;
+        } else if(strcmp(found,".")==0) {
+
+        } else {
+            NODE temp = temp_cur->child;
+            while(temp!=NULL) {
+                if(strcmp(temp->name,found)==0) {
+                    temp_cur=temp;
+                    break;
+                }
+                temp=temp->next;
+            }
+            if(temp==NULL) {
+                flag=1;
+                break;
+            }
+        }
+        found = strsep(&source,"/");
+    }
+    if(flag==1) {
+        write(connfd,"1",2);
+        return;
+    }
+    // printf("%s\n",temp_cur->loc_name);
+    NODE par = temp_cur->parent;
+    if(strcmp(par->child->name,temp_cur->name)==0) {
+        par->child = temp_cur->next;
+        temp_cur->next = NULL;
+    } else {
+        NODE temp = par->child;
+        NODE prev = temp;
+        while(temp!=NULL) {
+            if(strcmp(temp->name,temp_cur->name)==0) {
+                prev->next = temp_cur->next;
+                temp_cur->next = NULL;
+                break;
+            }
+            prev = temp;
+            temp=temp->next;
+        }
+    }
+
+    found = strsep(&destination,"/");
+    NODE temp_cur2 = cur;
+    int flag2=0;
+    while(found!=NULL) {
+        if(strcmp(found,"..")==0) {
+            temp_cur2 = temp_cur2->parent;
+        } else if(strcmp(found,".")==0) {
+
+        } else {
+            NODE temp = temp_cur2->child;
+            while(temp!=NULL) {
+                if(strcmp(temp->name,found)==0) {
+                    temp_cur2=temp;
+                    break;
+                }
+                temp=temp->next;
+            }
+            if(temp==NULL) {
+                strcpy(found2,found);
+                found = strsep(&destination,"/");
+                if(found!=NULL) {
+                    flag=1;
+                    break;
+                } else {
+                    flag2=1;
+                    break;
+                }
+
+            }
+        }
+        found = strsep(&destination,"/");
+    }
+    if(strcmp(temp_cur2->type,"file")==0) {
+        flag=1;
+    }
+    if(flag==1) {
+        write(connfd,"1",2);
+        return;
+    }
+    temp_cur->parent = temp_cur2;
+    if(temp_cur2->child==NULL) {
+        temp_cur2->child = temp_cur;
+    } else {
+        NODE temp = temp_cur2->child;
+        while(temp->next!=NULL) {
+            temp=temp->next;
+        }
+        temp->next = temp_cur;
+    }
+    if(flag2==1) {
+        strcpy(temp_cur->name,found2);
+    }
+
+    write(connfd,"0",2);
+
+}
+
+void copyfile() {
+    char *source = (char*)malloc(sizeof(char)*MAX_SIZE);
+    copyToString(source);
+    char *destination = (char*)malloc(sizeof(char)*MAX_SIZE);
+    copyToString(destination);
+    // printf("Source: %s\n",source);
+    // printf("Destination: %s\n",destination);
+    char *found;
+    char found2[MAX_SIZE];
+    found = strsep(&source,"/");
+    NODE temp_cur = cur;
+    int flag=0;
+    while(found!=NULL) {
+        if(strcmp(found,"..")==0) {
+            temp_cur = temp_cur->parent;
+        } else if(strcmp(found,".")==0) {
+
+        } else {
+            NODE temp = temp_cur->child;
+            while(temp!=NULL) {
+                if(strcmp(temp->name,found)==0) {
+                    temp_cur=temp;
+                    break;
+                }
+                temp=temp->next;
+            }
+            if(temp==NULL) {
+                flag=1;
+                break;
+            }
+        }
+        found = strsep(&source,"/");
+    }
+    if(flag==1) {
+        write(connfd,"1",2);
+        return;
+    }
+    // printf("Source Location: %s\n",temp_cur->loc_name);
+    NODE par = temp_cur->parent;
+    NODE sourcenode = (NODE)malloc(sizeof(struct node));
+
+    sourcenode->next = NULL;
+    sourcenode->no_of_chunks = temp_cur->no_of_chunks;
+    strcpy(sourcenode->type,temp_cur->type);
+
+
+    found = strsep(&destination,"/");
+    NODE temp_cur2 = cur;
+    int flag2=0;
+    while(found!=NULL) {
+        if(strcmp(found,"..")==0) {
+            temp_cur2 = temp_cur2->parent;
+        } else if(strcmp(found,".")==0) {
+
+        } else {
+            NODE temp = temp_cur2->child;
+            while(temp!=NULL) {
+                if(strcmp(temp->name,found)==0) {
+                    temp_cur2=temp;
+                    break;
+                }
+                temp=temp->next;
+            }
+            if(temp==NULL) {
+                strcpy(found2,found);
+                found = strsep(&destination,"/");
+                if(found!=NULL) {
+                    flag=1;
+                    break;
+                } else {
+                    flag2=1;
+                    break;
+                }
+
+            }
+        }
+        found = strsep(&destination,"/");
+    }
+    if(strcmp(temp_cur2->type,"file")==0) {
+        flag=1;
+    }
+    if(flag==1) {
+        write(connfd,"1",2);
+        return;
+    }
+    temp_cur->parent = temp_cur2;
+    if(temp_cur2->child==NULL) {
+        temp_cur2->child = sourcenode;
+    } else {
+        NODE temp = temp_cur2->child;
+        while(temp->next!=NULL) {
+            temp=temp->next;
+        }
+        temp->next = sourcenode;
+    }
+    if(flag2==1) {
+        strcpy(sourcenode->name,found2);
+    } else {
+        strcpy(sourcenode->name,temp_cur->name);
+    }
+    sourcenode->child = NULL;
+
+    write(connfd,"0",2);
+    write(connfd,temp_cur->loc_name,strlen(temp_cur->loc_name)+1);
+    char chunks[10];
+    sprintf(chunks,"%d",temp_cur->no_of_chunks);
+    write(connfd,chunks,strlen(chunks)+1);
+    char datalocation[MAX_SIZE];
+    copyToString(datalocation);
+    strcpy(sourcenode->loc_name,datalocation);
+
+}
+
+void frombigfs() {
+    char *file = (char*)malloc(sizeof(char)*MAX_SIZE);
+    copyToString(file);
+    // printf("File %s\n",file);
+    NODE temp = cur->child;
+    int flag=0;
+    while(temp!=NULL) {
+        if(strcmp(temp->name, file)==0) {
+            if(strcmp(temp->type, "file")==0) {
+                flag=1;
+                break;
+            }
+
+        }
+        temp=temp->next;
+    }
+    if(flag==0) {
+        write(connfd,"0",2);
+    } else {
+        write(connfd,"1",2);
+    }
+    write(connfd,temp->loc_name,strlen(temp->loc_name)+1);
+    char chunks[10];
+    sprintf(chunks,"%d",temp->no_of_chunks);
+    write(connfd,chunks,strlen(chunks)+1);
+}
 int main()
 {
     // signal(SIGCHLD,chldhandler);
@@ -272,447 +720,45 @@ int main()
     strcpy(home->type,"directory");
     home->parent = NULL;
     home->next = NULL;
-    NODE cur = home;
+    cur = home;
     char choice[MAX_SIZE];
     while(1) {
         char choice[MAX_SIZE];
         copyToString(choice);
-        if(strcmp(choice,"0")==0) {
-            NODE temp = cur->child;
-            while(temp!=NULL) {
-                // printf("%s-",temp->name);
-                write(connfd,temp->name,strlen(temp->name));
-                write(connfd,"\n",1);
-                temp = temp->next;
-            }
-            // printf("\n");
-            write(connfd,"\0",1);
-        } else if(strcmp(choice,"1")==0) {
-            char dirname[MAX_SIZE];
-            copyToString(dirname);
+        if(strcmp(choice,"ls")==0) {
+            listDirectory();
+        } else if(strcmp(choice,"mkdir")==0) {
 
-            NODE new = (NODE)malloc(sizeof(struct node));
-            new->next = NULL;
-            new->child = NULL;
-            new->parent = cur;
-            new->no_of_chunks = 0;
-            strcpy(new->name,dirname);
-            strcpy(new->type,"directory");
-            if(cur->child==NULL) {
-                cur->child = new;
-            } else {
-                // printf("-%s-",lastchild->name);
-                NODE lastchild = cur->child;
-                while(lastchild->next!=NULL) {
-                    lastchild=lastchild->next;
-                }
-                lastchild->next = new;
-            }
-        } else if(strcmp(choice,"2")==0) {
-            char *dirname = (char*)malloc(sizeof(char)*MAX_SIZE);
-            copyToString(dirname);
-            char *found;
-            found = strsep(&dirname,"/");
+            makeDirectory();
 
-            int flag=0;
-            NODE temp_cur = cur;
-            while(found!=NULL) {
-                if(strcmp(found,"..")==0) {
-                    temp_cur = temp_cur->parent;
-                    found = strsep(&dirname,"/");
-                    continue;
-                } else if(strcmp(found,".")==0) {
-                    found = strsep(&dirname,"/");
-                    continue;
-                }
-                NODE temp=temp_cur->child;
-                while(temp!=NULL) {
-                    if(strcmp(temp->name,found)==0) {
-                        if(strcmp(temp->type,"directory")!=0) {
-                            flag=1;
-                            break;
-                        }
-                        temp_cur = temp;
-                        break;
-                    }
-                    temp=temp->next;
-                }
-                if(temp==NULL || flag==1) {
-                    flag=1;
-                    break;
-                }
-                found = strsep(&dirname,"/");
+        } else if(strcmp(choice,"cd")==0) {
 
-            }
-            if(flag==0) {
-                cur=temp_cur;
-                write(connfd,"0\0",2);
-            } else {
-                write(connfd,"1\0",2);
-            }
+            changeDirectory();
 
-        } else if(strcmp(choice,"3")==0) {
-            char *filename = (char*)malloc(sizeof(char)*MAX_SIZE);
-            copyToString(filename);
-            char *found;
-            char found2[MAX_SIZE];
-            found = strsep(&filename,"/");
-            while(found!=NULL) {
-                strcpy(found2,found);
-                found = strsep(&filename,"/");
-            }
-            // strcpy(filename,found2);
-            // printf("%s\n",found2);
-            NODE temp = cur->child;
-            int flag = 0;
-            while(temp!=NULL) {
-                if(strcmp(temp->name,found2)==0) {
-                    flag=1;
-                    break;
-                }
-                temp=temp->next;
-            }
-            if(flag==0) {
-                write(connfd,"0\0",2);
-            } else {
-                write(connfd,"1\0",2);
-                continue;
-            }
-            NODE new = (NODE)malloc(sizeof(struct node));
-            new->next = NULL;
-            new->child = NULL;
-            new->parent = cur;
-            strcpy(new->type,"file");
+        } else if(strcmp(choice,"tobigfs")==0) {
 
-            strcpy(new->name,found2);
-            char no_of_chunks[20];
-            copyToString(no_of_chunks);
-            int chunks = atoi(no_of_chunks);
-            new->no_of_chunks = chunks;
-            if(cur->child==NULL) {
-                cur->child = new;
-            } else {
-                // printf("-%s-",lastchild->name);
-                NODE lastchild = cur->child;
-                while(lastchild->next!=NULL) {
-                    lastchild=lastchild->next;
-                }
-                lastchild->next = new;
-            }
-            copyToString(found2);
-            strcpy(new->loc_name, found2);
-            printf("File Location: %s\n",found2);
+            tobigfs();
 
-        } else if(strcmp(choice, "4")==0) {
-            char *source = (char*)malloc(sizeof(char)*MAX_SIZE);
-            copyToString(source);
-            char *destination = (char*)malloc(sizeof(char)*MAX_SIZE);
-            copyToString(destination);
-            printf("Source: %s\n",source);
-            printf("Destination: %s\n",destination);
-            char *found;
-            char found2[MAX_SIZE];
-            found = strsep(&source,"/");
-            NODE temp_cur = cur;
-            int flag=0;
-            while(found!=NULL) {
-                if(strcmp(found,"..")==0) {
-                    temp_cur = temp_cur->parent;
-                } else if(strcmp(found,".")==0) {
+        } else if(strcmp(choice, "mv")==0) {
 
-                } else {
-                    NODE temp = temp_cur->child;
-                    while(temp!=NULL) {
-                        if(strcmp(temp->name,found)==0) {
-                            temp_cur=temp;
-                            break;
-                        }
-                        temp=temp->next;
-                    }
-                    if(temp==NULL) {
-                        flag=1;
-                        break;
-                    }
-                }
-                found = strsep(&source,"/");
-            }
-            if(flag==1) {
-                write(connfd,"1\0",2);
-                continue;
-            }
-            // printf("%s\n",temp_cur->loc_name);
-            NODE par = temp_cur->parent;
-            if(strcmp(par->child->name,temp_cur->name)==0) {
-                par->child = temp_cur->next;
-                temp_cur->next = NULL;
-            } else {
-                NODE temp = par->child;
-                NODE prev = temp;
-                while(temp!=NULL) {
-                    if(strcmp(temp->name,temp_cur->name)==0) {
-                        prev->next = temp_cur->next;
-                        temp_cur->next = NULL;
-                        break;
-                    }
-                    prev = temp;
-                    temp=temp->next;
-                }
-            }
+            movefile();
 
-            found = strsep(&destination,"/");
-            NODE temp_cur2 = cur;
-            int flag2=0;
-            while(found!=NULL) {
-                if(strcmp(found,"..")==0) {
-                    temp_cur2 = temp_cur2->parent;
-                } else if(strcmp(found,".")==0) {
+        } else if(strcmp(choice, "cat")==0) {
 
-                } else {
-                    NODE temp = temp_cur2->child;
-                    while(temp!=NULL) {
-                        if(strcmp(temp->name,found)==0) {
-                            temp_cur2=temp;
-                            break;
-                        }
-                        temp=temp->next;
-                    }
-                    if(temp==NULL) {
-                        strcpy(found2,found);
-                        found = strsep(&destination,"/");
-                        if(found!=NULL) {
-                            flag=1;
-                            break;
-                        } else {
-                            flag2=1;
-                            break;
-                        }
+            catfile();
 
-                    }
-                }
-                found = strsep(&destination,"/");
-            }
-            if(strcmp(temp_cur2->type,"file")==0) {
-                flag=1;
-            }
-            if(flag==1) {
-                write(connfd,"1\0",2);
-                continue;
-            }
-            temp_cur->parent = temp_cur2;
-            if(temp_cur2->child==NULL) {
-                temp_cur2->child = temp_cur;
-            } else {
-                NODE temp = temp_cur2->child;
-                while(temp->next!=NULL) {
-                    temp=temp->next;
-                }
-                temp->next = temp_cur;
-            }
-            if(flag2==1) {
-                strcpy(temp_cur->name,found2);
-            }
+        } else if(strcmp(choice,"frombigfs")==0) {
 
-            write(connfd,"0\0",2);
-        } else if(strcmp(choice, "5")==0) {
-            char *file = (char*)malloc(sizeof(char)*MAX_SIZE);
-            copyToString(file);
-            printf("File %s\n",file);
-            NODE temp = cur->child;
-            int flag=0;
-            while(temp!=NULL) {
-                if(strcmp(temp->name, file)==0) {
-                    if(strcmp(temp->type, "file")==0) {
-                        flag=1;
-                        break;
-                    }
+            frombigfs();
 
-                }
-                temp=temp->next;
-            }
-            if(flag==0) {
-                write(connfd,"0\0",2);
-            } else {
-                write(connfd,"1\0",2);
-            }
-            write(connfd,temp->loc_name,strlen(temp->loc_name)+1);
-            char chunks[10];
-            sprintf(chunks,"%d",temp->no_of_chunks);
-            write(connfd,chunks,strlen(chunks)+1);
-        } else if(strcmp(choice,"6")==0) {
-            char *file = (char*)malloc(sizeof(char)*MAX_SIZE);
-            copyToString(file);
-            printf("File %s\n",file);
-            NODE temp = cur->child;
-            int flag=0;
-            while(temp!=NULL) {
-                if(strcmp(temp->name, file)==0) {
-                    if(strcmp(temp->type, "file")==0) {
-                        flag=1;
-                        break;
-                    }
+        } else if(strcmp(choice,"rm")==0) {
 
-                }
-                temp=temp->next;
-            }
-            if(flag==0) {
-                write(connfd,"0\0",2);
-            } else {
-                write(connfd,"1\0",2);
-            }
-            write(connfd,temp->loc_name,strlen(temp->loc_name)+1);
-            char chunks[10];
-            sprintf(chunks,"%d",temp->no_of_chunks);
-            write(connfd,chunks,strlen(chunks)+1);
+            removefile();
 
-        } else if(strcmp(choice,"7")==0) {
-            char *file = (char*)malloc(sizeof(char)*MAX_SIZE);
-            copyToString(file);
-            printf("File %s\n",file);
-            NODE temp = cur->child;
-            NODE prev = temp;
-            int flag=0;
-            if(temp==NULL) {
-            } else if(strcmp(prev->name,file)==0) {
-                cur->child = prev->next;
-                prev->next = NULL;
-                flag=1;
-            } else {
-                while(temp!=NULL) {
-                    if(strcmp(temp->name, file)==0) {
-                        if(strcmp(temp->type, "file")==0) {
-                            flag=1;
-                            prev->next = temp->next;
-                            temp->next = NULL;
-                            break;
-                        }
+        } else if(strcmp(choice,"cp")==0) {
 
-                    }
-                    prev=temp;
-                    temp=temp->next;
-                }
-            }
+            copyfile();
 
-            if(flag==0) {
-                write(connfd,"0\0",2);
-            } else {
-                write(connfd,"1\0",2);
-            }
-            write(connfd,temp->loc_name,strlen(temp->loc_name)+1);
-            char chunks[10];
-            sprintf(chunks,"%d",temp->no_of_chunks);
-            write(connfd,chunks,strlen(chunks)+1);
-
-        } else if(strcmp(choice,"8")==0) {
-
-            char *source = (char*)malloc(sizeof(char)*MAX_SIZE);
-            copyToString(source);
-            char *destination = (char*)malloc(sizeof(char)*MAX_SIZE);
-            copyToString(destination);
-            printf("Source: %s\n",source);
-            printf("Destination: %s\n",destination);
-            char *found;
-            char found2[MAX_SIZE];
-            found = strsep(&source,"/");
-            NODE temp_cur = cur;
-            int flag=0;
-            while(found!=NULL) {
-                if(strcmp(found,"..")==0) {
-                    temp_cur = temp_cur->parent;
-                } else if(strcmp(found,".")==0) {
-
-                } else {
-                    NODE temp = temp_cur->child;
-                    while(temp!=NULL) {
-                        if(strcmp(temp->name,found)==0) {
-                            temp_cur=temp;
-                            break;
-                        }
-                        temp=temp->next;
-                    }
-                    if(temp==NULL) {
-                        flag=1;
-                        break;
-                    }
-                }
-                found = strsep(&source,"/");
-            }
-            if(flag==1) {
-                write(connfd,"1\0",2);
-                continue;
-            }
-            printf("Source Location: %s\n",temp_cur->loc_name);
-            NODE par = temp_cur->parent;
-            NODE sourcenode = (NODE)malloc(sizeof(struct node));
-
-            sourcenode->next = NULL;
-            sourcenode->no_of_chunks = temp_cur->no_of_chunks;
-            strcpy(sourcenode->type,temp_cur->type);
-
-
-            found = strsep(&destination,"/");
-            NODE temp_cur2 = cur;
-            int flag2=0;
-            while(found!=NULL) {
-                if(strcmp(found,"..")==0) {
-                    temp_cur2 = temp_cur2->parent;
-                } else if(strcmp(found,".")==0) {
-
-                } else {
-                    NODE temp = temp_cur2->child;
-                    while(temp!=NULL) {
-                        if(strcmp(temp->name,found)==0) {
-                            temp_cur2=temp;
-                            break;
-                        }
-                        temp=temp->next;
-                    }
-                    if(temp==NULL) {
-                        strcpy(found2,found);
-                        found = strsep(&destination,"/");
-                        if(found!=NULL) {
-                            flag=1;
-                            break;
-                        } else {
-                            flag2=1;
-                            break;
-                        }
-
-                    }
-                }
-                found = strsep(&destination,"/");
-            }
-            if(strcmp(temp_cur2->type,"file")==0) {
-                flag=1;
-            }
-            if(flag==1) {
-                write(connfd,"1\0",2);
-                continue;
-            }
-            temp_cur->parent = temp_cur2;
-            if(temp_cur2->child==NULL) {
-                temp_cur2->child = sourcenode;
-            } else {
-                NODE temp = temp_cur2->child;
-                while(temp->next!=NULL) {
-                    temp=temp->next;
-                }
-                temp->next = sourcenode;
-            }
-            if(flag2==1) {
-                strcpy(sourcenode->name,found2);
-            } else {
-                strcpy(sourcenode->name,temp_cur->name);
-            }
-            sourcenode->child = NULL;
-
-            write(connfd,"0\0",2);
-            write(connfd,temp_cur->loc_name,strlen(temp_cur->loc_name)+1);
-            char chunks[10];
-            sprintf(chunks,"%d",temp_cur->no_of_chunks);
-            write(connfd,chunks,strlen(chunks)+1);
-            char datalocation[MAX_SIZE];
-            copyToString(datalocation);
-            strcpy(sourcenode->loc_name,datalocation);
         }
     }
 

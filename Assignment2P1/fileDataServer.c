@@ -108,7 +108,7 @@ void *readfromClient(void *vargp) {
             } else {
                 start2+=n;
             }
-            printf("CLIENT RECIEVED: %d\n", n);
+            // printf("CLIENT RECIEVED: %d\n", n);
         }
     }
 }
@@ -166,7 +166,7 @@ void connectToClient() {
 void printfile() {
     char data_loc[MAX_SIZE];
     copyToString(data_loc);
-    printf("Data location : %s\n",data_loc);
+    // printf("Data location : %s\n",data_loc);
     FILE* fp = fopen(data_loc, "r");
     if (fp == NULL) {
         printf("fopen failed, errno = %d\n", errno);
@@ -199,6 +199,111 @@ void printfile() {
         }
 
     }
+}
+
+void tobigfs() {
+    char temp_buf[2*BLOCKSIZE];
+    copyToString(temp_buf);
+
+    char name[MAX_SIZE];
+    copyToString(name);
+    printf("%s\n",name);
+    char dir[MAX_SIZE] = "data/";
+
+    char count[10];
+    copyToString(count);
+
+    char num[20];
+    copyToString(num);
+    printf("%s\n",num);
+    strcat(dir,name);
+    if(strcmp(count,"0")==0 && access( dir, F_OK ) != -1 ) {
+        int i=0;
+        char str[MAX_SIZE];
+        sprintf(str, "%s(%d)", dir,i);
+        // printf("%s\n",str);
+        while(access(str,F_OK)!=-1) {
+            i++;
+            sprintf(str, "%s(%d)", dir,i);
+        }
+        strcpy(dir,str);
+    }
+    // printf("Directory: %s\n",dir);
+
+    FILE *fp = fopen(dir,"w");
+    fclose(fp);
+    write(clientconn,dir,strlen(dir)+1);
+    strcat(dir,num);
+    fp = fopen(dir, "w");
+
+    fputs(temp_buf, fp);
+    fclose(fp);
+}
+
+void removefile() {
+    char name[MAX_SIZE];
+    copyToString(name);
+    char chunks[10];
+    copyToString(chunks);
+    if(access(name,F_OK)!=-1) {
+        remove(name);
+    }
+    strcat(name,chunks);
+    if (remove(name) != 0)
+        printf("Unable to delete the file");
+}
+
+void copyfile() {
+    char name[MAX_SIZE];
+    copyToString(name);
+    char chunks[10];
+    copyToString(chunks);
+    int i=0;
+    char str[MAX_SIZE];
+    sprintf(str, "%s(%d)", name,i);
+    // printf("%s\n",str);
+    while(strcmp(chunks,"0")==0 && access(str,F_OK)!=-1) {
+        i++;
+        sprintf(str, "%s(%d)", name,i);
+    }
+    char source[MAX_SIZE];
+    strcpy(source,name);
+    if(strcmp(chunks,"0")==0) {
+        strcpy(name,str);
+        write(clientconn,name,strlen(name)+1);
+    } else {
+        copyToString(name);
+    }
+    // printf("File nae: %s\n",source);
+
+    char ch;
+    strcat(source,chunks);
+
+    FILE* source1 = fopen(source, "r");
+
+    if( source1 == NULL )
+    {
+        printf("Press any key to exit...\n");
+        exit(EXIT_FAILURE);
+    }
+    FILE* tempfile = fopen(name,"w");
+    fclose(tempfile);
+    strcat(name,chunks);
+    FILE* target = fopen(name, "w");
+
+    if( target == NULL )
+    {
+        fclose(source1);
+        printf("Press any key to exit...\n");
+        exit(EXIT_FAILURE);
+    }
+
+    while( ( ch = fgetc(source1) ) != EOF )
+        fputc(ch, target);
+
+    // printf("File copied successfully.\n");
+    fclose(source1);
+    fclose(target);
 }
 int main() {
 
@@ -240,110 +345,20 @@ int main() {
     while(1) {
         char choice[MAX_SIZE];
         copyToString(choice);
-        if(strcmp(choice, "0")==0) {
-            char temp_buf[2*BLOCKSIZE];
-            copyToString(temp_buf);
-            // printf("%s\n",temp_buf);
+        if(strcmp(choice, "tobigfs")==0) {
 
-            char name[MAX_SIZE];
-            copyToString(name);
-            printf("%s\n",name);
-            char dir[MAX_SIZE] = "data/";
+            tobigfs();
 
-            char count[10];
-            copyToString(count);
+        } else if(strcmp(choice,"cat")==0) {
 
-            char num[20];
-            copyToString(num);
-            printf("%s\n",num);
-            strcat(dir,name);
-            if(strcmp(count,"0")==0 && access( dir, F_OK ) != -1 ) {
-                int i=0;
-                char str[MAX_SIZE];
-                sprintf(str, "%s(%d)", dir,i);
-                // printf("%s\n",str);
-                while(access(str,F_OK)!=-1) {
-                    i++;
-                    sprintf(str, "%s(%d)", dir,i);
-                }
-                strcpy(dir,str);
-            }
-            printf("Directory: %s\n",dir);
-
-            FILE *fp = fopen(dir,"w");
-            fclose(fp);
-            write(clientconn,dir,strlen(dir)+1);
-            strcat(dir,num);
-            fp = fopen(dir, "w");
-
-            fputs(temp_buf, fp);
-            fclose(fp);
-
-
-        } else if(strcmp(choice,"1")==0) {
             printfile();
-        } else if(strcmp(choice,"2")==0) {
-            char name[MAX_SIZE];
-            copyToString(name);
-            char chunks[10];
-            copyToString(chunks);
-            if(access(name,F_OK)!=-1) {
-                remove(name);
-            }
-            strcat(name,chunks);
-            if (remove(name) != 0)
-                printf("Unable to delete the file");
-        } else if(strcmp(choice,"3")==0) {
-            char name[MAX_SIZE];
-            copyToString(name);
-            char chunks[10];
-            copyToString(chunks);
-            int i=0;
-            char str[MAX_SIZE];
-            sprintf(str, "%s(%d)", name,i);
-            // printf("%s\n",str);
-            while(strcmp(chunks,"0")==0 && access(str,F_OK)!=-1) {
-                i++;
-                sprintf(str, "%s(%d)", name,i);
-            }
-            char source[MAX_SIZE];
-            strcpy(source,name);
-            if(strcmp(chunks,"0")==0) {
-                strcpy(name,str);
-                write(clientconn,name,strlen(name)+1);
-            } else {
-                copyToString(name);
-            }
-            printf("File nae: %s\n",source);
 
-            char ch;
-            strcat(source,chunks);
+        } else if(strcmp(choice,"rm")==0) {
 
-            FILE* source1 = fopen(source, "r");
+            removefile();
 
-            if( source1 == NULL )
-            {
-                printf("Press any key to exit...\n");
-                exit(EXIT_FAILURE);
-            }
-            FILE* tempfile = fopen(name,"w");
-            fclose(tempfile);
-            strcat(name,chunks);
-            FILE* target = fopen(name, "w");
-
-            if( target == NULL )
-            {
-                fclose(source1);
-                printf("Press any key to exit...\n");
-                exit(EXIT_FAILURE);
-            }
-
-            while( ( ch = fgetc(source1) ) != EOF )
-                fputc(ch, target);
-
-            printf("File copied successfully.\n");
-            fclose(source1);
-            fclose(target);
+        } else if(strcmp(choice,"cp")==0) {
+            copyfile();
         }
 
 

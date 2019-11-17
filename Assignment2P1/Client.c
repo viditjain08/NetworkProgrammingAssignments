@@ -3,7 +3,6 @@
 #include<stdlib.h>
 #include<unistd.h>
 #include<sys/wait.h>
-#include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include<stdbool.h>
@@ -12,10 +11,12 @@
 #include <netdb.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <dirent.h>
 #define MAX_SIZE 1024
 #define PORT1 8080
 #define PORT3 8084
@@ -31,23 +32,24 @@ char rbuf1[2*MAX_SIZE];
 char rbuf2[2*MAX_SIZE];
 int start1=0,start2=0,bufsel=0;
 int cur1=0,cur2=0,cursel=0;
+char *command;
 
-char buffer1[MAXDATA][2*BLOCKSIZE];
-char buffer2[MAXDATA][2*BLOCKSIZE];
-int startptr1[MAXDATA];
-int startptr2[MAXDATA];
-int bufferselect[MAXDATA];
-int currentptr1[MAXDATA];
-int currentptr2[MAXDATA];
-int currentselect[MAXDATA];
+char buffer1[MAXDATA][2*BLOCKSIZE] = {0};
+char buffer2[MAXDATA][2*BLOCKSIZE] = {0};
+int startptr1[MAXDATA] = {0};
+int startptr2[MAXDATA] = {0};
+int bufferselect[MAXDATA] = {0};
+int currentptr1[MAXDATA] = {0};
+int currentptr2[MAXDATA] = {0};
+int currentselect[MAXDATA] = {0};
 
-// typedef struct node * NODE;
-// struct node {
-//     char name[256];
-//     NODE next;
-// };
-// NODE filestart;
-// NODE filecur;
+int is_regular_file(const char *path)
+{
+    struct stat path_stat;
+    stat(path, &path_stat);
+    return S_ISREG(path_stat.st_mode);
+}
+
 void copyToString(char *buf) {
     if(cursel==0) {
         while(start1<MAX_SIZE && cur1>=start1);
@@ -96,7 +98,7 @@ void copyToString(char *buf) {
             cursel=0;
         }
     }
-    printf("String: %s\n",buf);
+    // printf("String: %s\n",buf);
 }
 void *readfromName(void *vargp) {
     int n;
@@ -249,11 +251,145 @@ void *readfromData(void *vargp) {
 
 
 void listDirectory() {
+    write(sockfd,"ls",3);
     int n;
     int start=0;
-    char readbuffer[1024];
+    char readbuffer[MAX_SIZE];
     copyToString(readbuffer);
     printf("%s",readbuffer);
+}
+
+void makeDirectory() {
+    char *commandfound;
+    commandfound = strsep(&command," ");
+    if(commandfound==NULL) {
+        printf("No directory Specified\n");
+        return;
+    }
+    write(sockfd,"mkdir",6);
+    write(sockfd,commandfound,strlen(commandfound)+1);
+}
+
+void changeDirectory() {
+    write(sockfd,"cd",3);
+    char *commandfound;
+    commandfound = strsep(&command," ");
+    if(commandfound==NULL) {
+        printf("No directory Specified\n");
+        return;
+    }
+    write(sockfd,commandfound,strlen(commandfound)+1);
+    char choice[MAX_SIZE];
+    copyToString(choice);
+    if(strcmp(choice,"1")==0) {
+        printf("Directory not present\n");
+    }
+}
+
+void transfertoBigFS(char* file_name) {
+    FILE* fp = fopen(file_name, "r");
+
+    // checking if the file exist or not
+    if (fp == NULL) {
+        printf("File Not Found!\n");
+        return;
+    }
+
+    fseek(fp, 0L, SEEK_END);
+
+    // calculating the size of the file
+    long int res = ftell(fp);
+    int no_of_parts = 1+res/(BLOCKSIZE);
+
+    char strparts[10];
+    sprintf(strparts, "%d", no_of_parts);
+    write(sockfd,strparts,strlen(strparts)+1);
+    int ptr=0;
+    fseek(fp, 0L, SEEK_SET);
+    char temp_buf[BLOCKSIZE];
+    int fd = fileno(fp);
+
+    int count=0;
+
+    char *found;
+    char dir[MAX_SIZE];
+    found = strsep(&file_name,"/");
+    while(found!=NULL) {
+        strcpy(dir,found);
+        found = strsep(&file_name,"/");
+    }
+    for(int i=0;i<no_of_parts;i++) {
+        write(datafds[ptr],"tobigfs",8);
+        int n = read(fd, temp_buf, sizeof(temp_buf));
+        int write_count=0;
+        fd_set rset, wset;
+
+        while(write_count<n) {
+            FD_ZERO(&rset);
+            FD_ZERO(&wset);
+            FD_SET(datafds[ptr], &wset);
+            select(datafds[ptr]+1,&rset,&wset,NULL,NULL);
+            if(FD_ISSET(datafds[ptr],&wset)) {
+                int x;
+                if(write_count+(BLOCKSIZE/1000)>=n)
+                    x = write(datafds[ptr],temp_buf+write_count,n-write_count);
+                else
+                    x = write(datafds[ptr],temp_buf+write_count,BLOCKSIZE/1000);
+                write_count+=(BLOCKSIZE)/1000;
+                // printf("Write count: %d-%d-%d\n",write_count,x,errno);
+            }
+
+        }
+
+        write(datafds[ptr],"\0",1);
+
+        write(datafds[ptr],dir,1+strlen(dir));
+
+        char strcount[10];
+        sprintf(strcount, "%d", count);
+        write(datafds[ptr],strcount,1+strlen(strcount));
+
+        sprintf(strcount, "%d", i);
+        write(datafds[ptr],strcount,1+strlen(strcount));
+
+        char data_loc[MAX_SIZE];
+
+        datacopyToString(data_loc, ptr);
+
+        if(i==0) {
+            write(sockfd,data_loc,strlen(data_loc)+1);
+            char *data_temp = (char*)malloc(sizeof(char)*MAX_SIZE);
+            strcpy(data_temp,data_loc);
+            char *found_dir;
+            found_dir = strsep(&data_temp,"/");
+            while(found_dir!=NULL) {
+                strcpy(dir,found_dir);
+                found_dir = strsep(&data_temp,"/");
+            }
+            // printf("File Loc Name: %s\n",dir);
+        }
+        if(ptr==(no_of_dataservers-1)) {
+            count++;
+        }
+        ptr = (ptr+1)%(no_of_dataservers);
+
+    }
+}
+
+void tobigfs() {
+    write(sockfd,"tobigfs",8);
+
+    char *commandfound;
+    commandfound = strsep(&command," ");
+    write(sockfd,commandfound,strlen(commandfound)+1);
+
+    char temp[MAX_SIZE];
+    copyToString(temp);
+    if(strcmp(temp, "1")==0) {
+      printf("File/Directory with the same name exists\n");
+      return;
+    }
+    transfertoBigFS(commandfound);
 }
 
 void connectToData() {
@@ -288,126 +424,11 @@ void connectToData() {
     }
 }
 
-// int checkfileexists(char* file_name) {
-//     NODE temp = filestart;
-//     while(temp!=NULL) {
-//         if(strcmp(temp->name, file_name)==0) {
-//             return 1;
-//         }
-//         temp = temp->next;
-//     }
-//     return 0;
-// }
-void transfertoBigFS(char* file_name) {
-    FILE* fp = fopen(file_name, "r");
-
-    // checking if the file exist or not
-    if (fp == NULL) {
-        printf("File Not Found!\n");
-        return;
-    }
-
-    fseek(fp, 0L, SEEK_END);
-
-    // calculating the size of the file
-    long int res = ftell(fp);
-    int no_of_parts = 1+res/(BLOCKSIZE);
-
-    printf("No of parts: %d\n",no_of_parts);
-    char strparts[10];
-    sprintf(strparts, "%d", no_of_parts);
-    write(sockfd,strparts,strlen(strparts)+1);
-    int ptr=0;
-    fseek(fp, 0L, SEEK_SET);
-    char temp_buf[BLOCKSIZE];
-    int fd = fileno(fp);
-    // printf("Bytes read-%d\n",n);
-    // while(checkfileexists(file_name)==1) {
-    //     strcat(file_name, "new");
-    // }
-    // NODE new = (NODE)malloc(sizeof(struct node));
-    // new->next = NULL;
-    // strcpy(new->name,file_name);
-    // filecur->next = new;
-    // filecur = new;
-    int count=0;
-    // char dir[MAX_SIZE];
-    // copyToString(dir);
-
-    char *found;
-    char dir[MAX_SIZE];
-    found = strsep(&file_name,"/");
-    while(found!=NULL) {
-        strcpy(dir,found);
-        found = strsep(&file_name,"/");
-    }
-    for(int i=0;i<no_of_parts;i++) {
-        write(datafds[ptr],"0\0",2);
-        int n = read(fd, temp_buf, sizeof(temp_buf));
-        int write_count=0;
-        fd_set rset, wset;
-
-        while(write_count<n) {
-            FD_ZERO(&rset);
-            FD_ZERO(&wset);
-            FD_SET(datafds[ptr], &wset);
-            select(datafds[ptr]+1,&rset,&wset,NULL,NULL);
-            if(FD_ISSET(datafds[ptr],&wset)) {
-                int x;
-                if(write_count+(BLOCKSIZE/1000)>=n)
-                    x = write(datafds[ptr],temp_buf+write_count,n-write_count);
-                else
-                    x = write(datafds[ptr],temp_buf+write_count,BLOCKSIZE/1000);
-                write_count+=(BLOCKSIZE)/1000;
-                // printf("Write count: %d-%d-%d\n",write_count,x,errno);
-            }
-
-        }
-
-        // int x = write(datafds[ptr],temp_buf,n);
-        write(datafds[ptr],"\0",1);
-        // printf("-%d-\n",ret);
-
-        write(datafds[ptr],dir,1+strlen(dir));
-
-        // write(datafds[ptr],file_name,strlen(file_name));
-        char strcount[10];
-        sprintf(strcount, "%d", count);
-        write(datafds[ptr],strcount,strlen(strcount));
-        write(datafds[ptr],"\0",1);
-
-        sprintf(strcount, "%d", i);
-        write(datafds[ptr],strcount,strlen(strcount));
-        write(datafds[ptr],"\0",1);
-
-        char data_loc[MAX_SIZE];
-
-        datacopyToString(data_loc, ptr);
-
-        if(i==0 && count==0) {
-            write(sockfd,data_loc,strlen(data_loc)+1);
-            char *data_temp = (char*)malloc(sizeof(char)*MAX_SIZE);
-            strcpy(data_temp,data_loc);
-            char *found_dir;
-            found_dir = strsep(&data_temp,"/");
-            while(found_dir!=NULL) {
-                strcpy(dir,found_dir);
-                found_dir = strsep(&data_temp,"/");
-            }
-            printf("File Loc Name: %s\n",dir);
-        }
-        if(ptr==(no_of_dataservers-1)) {
-            count++;
-        }
-        ptr = (ptr+1)%(no_of_dataservers);
-
-    }
-}
 
 void printfile(char *file_name, int no_of_chunks) {
     int ptr=0;
     for(int i=0;i<no_of_chunks;i++) {
-        write(datafds[ptr],"1\0",2);
+        write(datafds[ptr],"cat",4);
         write(datafds[ptr],file_name,strlen(file_name));
         char chunks[10];
         sprintf(chunks,"%d",i);
@@ -429,8 +450,28 @@ void printfile(char *file_name, int no_of_chunks) {
     printf("\n");
 }
 
-void savefile(char *name, char *file_name, int no_of_chunks) {
+void savefile() {
+    // printf("Transferring from bigfs\n");
+    write(sockfd,"frombigfs",10);
     char *found;
+    found = strsep(&command," ");
+    write(sockfd,found,strlen(found)+1);
+    char temp[10];
+    copyToString(temp);
+    if(strcmp(temp,"0")==0) {
+        printf("File not found in current directory\n");
+        return;
+    }
+    char loc[MAX_SIZE];
+    copyToString(loc);
+    char chunks[10];
+    copyToString(chunks);
+    // printf("Location: %s\n",loc);
+    int no_of_chunks = atoi(chunks);
+    char *name = (char*)malloc(sizeof(char)*MAX_SIZE);
+    strcpy(name,found);
+    char *file_name = (char*)malloc(sizeof(char)*MAX_SIZE);
+    strcpy(file_name,loc);
     char found2[MAX_SIZE];
     found = strsep(&name,"/");
     while(found!=NULL) {
@@ -440,7 +481,7 @@ void savefile(char *name, char *file_name, int no_of_chunks) {
 
     int ptr=0;
     for(int i=0;i<no_of_chunks;i++) {
-        write(datafds[ptr],"1\0",2);
+        write(datafds[ptr],"cat",4);
         write(datafds[ptr],file_name,strlen(file_name));
         char chunks[10];
         sprintf(chunks,"%d",i);
@@ -453,15 +494,13 @@ void savefile(char *name, char *file_name, int no_of_chunks) {
     for(int i=0;i<no_of_chunks;i++) {
 
         char temp_buf[BLOCKSIZE];
-        // fflush(stdout);
+
         datacopyToString(temp_buf, ptr);
         while(strlen(temp_buf)!=0) {
             fprintf(fp,"%s",temp_buf);
             datacopyToString(temp_buf, ptr);
         }
 
-        // fflush(stdout);
-        // printf("-%d-\n",strlen(temp_buf));
 
         ptr = (ptr+1)%(no_of_dataservers);
 
@@ -471,10 +510,26 @@ void savefile(char *name, char *file_name, int no_of_chunks) {
 
 }
 
-void removefile(char *loc, int no_of_chunks) {
+void removefile() {
+    write(sockfd,"rm",3);
+    char *found;
+    found = strsep(&command," ");
+    write(sockfd,found,strlen(found)+1);
+    char temp[10];
+    copyToString(temp);
+    if(strcmp(temp,"0")==0) {
+        printf("File not found in current directory\n");
+        return;
+    }
+    char loc[MAX_SIZE];
+    copyToString(loc);
+    char chunks[10];
+    copyToString(chunks);
+    // printf("Location: %s\n",loc);
+    int no_of_chunks = atoi(chunks);
     int ptr=0;
     for(int i=0;i<no_of_chunks;i++) {
-        write(datafds[ptr],"2",2);
+        write(datafds[ptr],"rm",3);
         write(datafds[ptr],loc,strlen(loc)+1);
         char chunks[10];
         sprintf(chunks,"%d",i);
@@ -483,12 +538,30 @@ void removefile(char *loc, int no_of_chunks) {
     }
 }
 
-void copyfile(char *loc, int no_of_chunks) {
+void copyfile() {
+    write(sockfd,"cp",3);
+    char *found;
+    found = strsep(&command," ");
+    write(sockfd,found,strlen(found)+1);
+    found = strsep(&command," ");
+    write(sockfd,found,strlen(found)+1);
+    char temp[MAX_SIZE];
+    copyToString(temp);
+    if(strcmp(temp,"1")==0) {
+      printf("Invalid copy\n");
+      return;
+    }
+    char loc[MAX_SIZE];
+    copyToString(loc);
+    char chunks[10];
+    copyToString(chunks);
+    // printf("Location: %s\n",loc);
+    int no_of_chunks = atoi(chunks);
     int ptr=0;
     char loca[MAX_SIZE];
 
     for(int i=0;i<no_of_chunks;i++) {
-        write(datafds[ptr],"3",2);
+        write(datafds[ptr],"cp",3);
         write(datafds[ptr],loc,strlen(loc)+1);
         char chunks[10];
         sprintf(chunks,"%d",i);
@@ -503,20 +576,42 @@ void copyfile(char *loc, int no_of_chunks) {
         ptr = (ptr+1)%(no_of_dataservers);
     }
 }
-int main() {
-    // filestart = (NODE)malloc(sizeof(struct node));
-    // filestart->next = NULL;
-    // strcpy(filestart->name,"home");
-    // filecur = filestart;
 
-    for(int i=0;i<MAXDATA;i++) {
-        startptr1[i]=0;
-        startptr2[i]=0;
-        bufferselect[i]=0;
-        currentptr1[i]=0;
-        currentptr2[i]=0;
-        currentselect[i]=0;
+void catfile() {
+    write(sockfd,"cat",4);
+    char *found;
+    found = strsep(&command," ");
+    write(sockfd,found,strlen(found)+1);
+    char temp[10];
+    copyToString(temp);
+    if(strcmp(temp,"0")==0) {
+      printf("File not found in current directory\n");
+      return;
     }
+    char loc[MAX_SIZE];
+    copyToString(loc);
+    char chunks[10];
+    copyToString(chunks);
+    // printf("Location: %s\n",loc);
+    printfile(loc,atoi(chunks));
+}
+
+void movefile() {
+    write(sockfd,"mv",3);
+    char *found;
+    found = strsep(&command," ");
+    write(sockfd,found,strlen(found)+1);
+    found = strsep(&command," ");
+    write(sockfd,found,strlen(found)+1);
+    char temp[MAX_SIZE];
+    copyToString(temp);
+    if(strcmp(temp,"1")==0) {
+      printf("Invalid move\n");
+      return;
+    }
+}
+int main() {
+
     struct sockaddr_in servaddr, cli;
 
     // socket create and varification
@@ -558,6 +653,7 @@ int main() {
 
     char *temp;
     temp = strsep(&y," ");
+    printf("Data Servers' ip addresses-\n");
     while(temp!=NULL) {
         if(strlen(temp)==0) {
             break;
@@ -567,7 +663,6 @@ int main() {
         temp = strsep(&y," ");
         no_of_dataservers++;
     }
-    printf("%d\n",no_of_dataservers);
     connectToData();
     pthread_t threads[MAXDATA];
     for(int i=0;i<no_of_dataservers;i++) {
@@ -579,7 +674,7 @@ int main() {
     while(1) {
         printf("prompt> ");
         fflush(stdout);
-        char *command = (char*)malloc(sizeof(char)*MAX_SIZE);
+        command = (char*)malloc(sizeof(char)*MAX_SIZE);
         char *found;
         fgets(command, MAX_SIZE, stdin);
         command[strlen(command)-1]='\0';
@@ -590,136 +685,39 @@ int main() {
         }
         if(strcmp(found, "ls")==0) {
 
-            write(sockfd,"0\0",2);
             listDirectory();
 
         } else if(strcmp(found, "mkdir")==0) {
 
-            write(sockfd,"1\0",2);
-            found = strsep(&command," ");
-            write(sockfd,found,strlen(found)+1);
+            makeDirectory();
 
         } else if(strcmp(found,"cd")==0) {
 
-            write(sockfd,"2\0",2);
-            found = strsep(&command," ");
-            write(sockfd,found,strlen(found)+1);
-            char choice[MAX_SIZE];
-            copyToString(choice);
-            if(strcmp(choice,"1")==0) {
-                printf("Directory not present\n");
-            }
+            changeDirectory();
 
         } else if(strcmp(found,"cat")==0) {
 
-            printf("Printing File\n");
-            write(sockfd,"5\0",2);
-            found = strsep(&command," ");
-            write(sockfd,found,strlen(found)+1);
-            char temp[10];
-            copyToString(temp);
-            if(strcmp(temp,"0")==0) {
-              printf("File not found in current directory\n");
-              continue;
-            }
-            char loc[MAX_SIZE];
-            copyToString(loc);
-            char chunks[10];
-            copyToString(chunks);
-            printf("Location: %s\n",loc);
-            printfile(loc,atoi(chunks));
+            catfile();
 
         } else if(strcmp(found,"mv")==0) {
 
-            printf("Moving File\n");
-            write(sockfd,"4\0",2);
-            found = strsep(&command," ");
-            write(sockfd,found,strlen(found)+1);
-            found = strsep(&command," ");
-            write(sockfd,found,strlen(found)+1);
-            char temp[MAX_SIZE];
-            copyToString(temp);
-            if(strcmp(temp,"1")==0) {
-              printf("Invalid move\n");
-              continue;
-            }
+            movefile();
 
         } else if(strcmp(found,"cp")==0) {
 
-            printf("Copying file\n");
-            write(sockfd,"8\0",2);
-            found = strsep(&command," ");
-            write(sockfd,found,strlen(found)+1);
-            found = strsep(&command," ");
-            write(sockfd,found,strlen(found)+1);
-            char temp[MAX_SIZE];
-            copyToString(temp);
-            if(strcmp(temp,"1")==0) {
-              printf("Invalid copy\n");
-              continue;
-            }
-            char loc[MAX_SIZE];
-            copyToString(loc);
-            char chunks[10];
-            copyToString(chunks);
-            printf("Location: %s\n",loc);
-            copyfile(loc,atoi(chunks));
-
+            copyfile();
 
         } else if(strcmp(found,"rm")==0) {
 
-            printf("Removing file\n");
-            write(sockfd,"7",2);
-            found = strsep(&command," ");
-            write(sockfd,found,strlen(found)+1);
-            char temp[10];
-            copyToString(temp);
-            if(strcmp(temp,"0")==0) {
-                printf("File not found in current directory\n");
-                continue;
-            }
-            char loc[MAX_SIZE];
-            copyToString(loc);
-            char chunks[10];
-            copyToString(chunks);
-            printf("Location: %s\n",loc);
-            removefile(loc,atoi(chunks));
+            removefile();
 
         } else if(strcmp(found,"tobigfs")==0) {
 
-            printf("Transferring to bigfs\n");
-            write(sockfd,"3\0",2);
-
-
-            found = strsep(&command," ");
-            write(sockfd,found,strlen(found)+1);
-
-            char temp[MAX_SIZE];
-            copyToString(temp);
-            if(strcmp(temp, "1")==0) {
-              printf("File/Directory with the same name exists\n");
-              continue;
-            }
-            transfertoBigFS(found);
+            tobigfs();
 
         } else if(strcmp(found,"frombigfs")==0) {
 
-            printf("Transferring from bigfs\n");
-            write(sockfd,"6",2);
-            found = strsep(&command," ");
-            write(sockfd,found,strlen(found)+1);
-            char temp[10];
-            copyToString(temp);
-            if(strcmp(temp,"0")==0) {
-                printf("File not found in current directory\n");
-                continue;
-            }
-            char loc[MAX_SIZE];
-            copyToString(loc);
-            char chunks[10];
-            copyToString(chunks);
-            printf("Location: %s\n",loc);
-            savefile(found,loc,atoi(chunks));
+            savefile();
 
         } else if(strcmp(found,"exit")==0) {
             printf("Exiting\n");
