@@ -152,8 +152,7 @@ void datacopyToString(char *buf, int i) {
                 datacopyToString(buf+idx,i);
                 return;
             }
-            // printf("viditjain08-%c-%d-%d\n",buf[idx-1],currentptr1[i],startptr1[i]);
-
+            // printf("0-%d/%d\n",currentptr1[i],startptr1[i]);
             while(currentptr1[i]>=startptr1[i]);
 
         }
@@ -182,7 +181,10 @@ void datacopyToString(char *buf, int i) {
                 datacopyToString(buf+idx,i);
                 return;
             }
+            // printf("1-%d/%d\n",currentptr2[i],startptr2[i]);
+
             while(currentptr2[i]>=startptr2[i]);
+
         }
         buf[idx]='\0';
         currentptr2[i]++;
@@ -191,7 +193,6 @@ void datacopyToString(char *buf, int i) {
             currentselect[i]=0;
         }
     }
-    // printf("String: %s\n",buf);
 }
 void *readfromData(void *vargp) {
     int i = *((int*)vargp);
@@ -204,6 +205,7 @@ void *readfromData(void *vargp) {
         select(datafds[i]+1,&rset,&wset,NULL,NULL);
 
         if(FD_ISSET(datafds[i], &rset)) {
+        // if(1) {
             if(bufferselect[i]==0 && startptr1[i]>BLOCKSIZE) {
                 bufferselect[i]=1;
                 startptr2[i]=0;
@@ -226,11 +228,11 @@ void *readfromData(void *vargp) {
             } else {
                 if(bufferselect[i]==0) {
                     // buffer1[i][startptr1[i]+n]='\0';
-                    // printf("Client received: %s\n",buffer1[i]+startptr1[i]);
+                    // printf("Client received: %d\n",n+startptr1[i]);
                     startptr1[i]+=n;
                 } else {
                     // buffer2[i][startptr2[i]+n]='\0';
-                    // printf("Client received: %s\n",buffer2[i]+startptr2[i]);
+                    // printf("Client received: %d\n",n+startptr2[i]);
                     startptr2[i]+=n;
                 }
                 // printf("CLIENT RECIEVED: (%d)\n", n);
@@ -415,7 +417,6 @@ void printfile(char *file_name, int no_of_chunks) {
         datacopyToString(temp_buf, ptr);
 
         printf("%s",temp_buf);
-        fflush(stdout);
         ptr = (ptr+1)%(no_of_dataservers);
 
     }
@@ -423,6 +424,14 @@ void printfile(char *file_name, int no_of_chunks) {
 }
 
 void savefile(char *name, char *file_name, int no_of_chunks) {
+    char *found;
+    char found2[MAX_SIZE];
+    found = strsep(&name,"/");
+    while(found!=NULL) {
+        strcpy(found2,found);
+        found = strsep(&name,"/");
+    }
+
     int ptr=0;
     for(int i=0;i<no_of_chunks;i++) {
         write(datafds[ptr],"1\0",2);
@@ -432,18 +441,24 @@ void savefile(char *name, char *file_name, int no_of_chunks) {
         write(datafds[ptr],chunks,strlen(chunks)+1);
         ptr = (ptr+1)%(no_of_dataservers);
     }
+    FILE *fp = fopen(found2, "w");
+    int fd = fileno(fp);
     ptr = 0;
     for(int i=0;i<no_of_chunks;i++) {
+
         char temp_buf[BLOCKSIZE];
-
+        // fflush(stdout);
         datacopyToString(temp_buf, ptr);
-
-        printf("%s",temp_buf);
+        // fflush(stdout);
+        fprintf(fp,"%s",temp_buf);
         fflush(stdout);
+
         ptr = (ptr+1)%(no_of_dataservers);
 
     }
-    printf("\n");
+    write(fd,"\0",1);
+    fclose(fp);
+
 }
 int main() {
     // filestart = (NODE)malloc(sizeof(struct node));
@@ -524,17 +539,22 @@ int main() {
         command[strlen(command)-1]='\0';
         found = strsep(&command," ");
         if(found==NULL) {
-          printf("Invalid  Command\n");
-          continue;
+            printf("Invalid  Command\n");
+            continue;
         }
         if(strcmp(found, "ls")==0) {
-          write(sockfd,"0\0",2);
-          listDirectory();
+
+            write(sockfd,"0\0",2);
+            listDirectory();
+
         } else if(strcmp(found, "mkdir")==0) {
-          write(sockfd,"1\0",2);
-          found = strsep(&command," ");
-          write(sockfd,found,strlen(found)+1);
+
+            write(sockfd,"1\0",2);
+            found = strsep(&command," ");
+            write(sockfd,found,strlen(found)+1);
+
         } else if(strcmp(found,"cd")==0) {
+
             write(sockfd,"2\0",2);
             found = strsep(&command," ");
             write(sockfd,found,strlen(found)+1);
@@ -543,66 +563,93 @@ int main() {
             if(strcmp(choice,"1")==0) {
                 printf("Directory not present\n");
             }
+
         } else if(strcmp(found,"cat")==0) {
-          printf("Printing File\n");
-          write(sockfd,"5\0",2);
-          found = strsep(&command," ");
-          write(sockfd,found,strlen(found)+1);
-          char temp[10];
-          copyToString(temp);
-          if(strcmp(temp,"0")==0) {
+
+            printf("Printing File\n");
+            write(sockfd,"5\0",2);
+            found = strsep(&command," ");
+            write(sockfd,found,strlen(found)+1);
+            char temp[10];
+            copyToString(temp);
+            if(strcmp(temp,"0")==0) {
               printf("File not found in current directory\n");
               continue;
-          }
-          char loc[MAX_SIZE];
-          copyToString(loc);
-          char chunks[10];
-          copyToString(chunks);
-          printf("Location: %s\n",loc);
-          printfile(loc,atoi(chunks));
+            }
+            char loc[MAX_SIZE];
+            copyToString(loc);
+            char chunks[10];
+            copyToString(chunks);
+            printf("Location: %s\n",loc);
+            printfile(loc,atoi(chunks));
+
         } else if(strcmp(found,"mv")==0) {
 
-          printf("Moving File\n");
-          write(sockfd,"4\0",2);
-          found = strsep(&command," ");
-          write(sockfd,found,strlen(found)+1);
-          found = strsep(&command," ");
-          write(sockfd,found,strlen(found)+1);
-          char temp[MAX_SIZE];
-          copyToString(temp);
-          if(strcmp(temp,"1")==0) {
+            printf("Moving File\n");
+            write(sockfd,"4\0",2);
+            found = strsep(&command," ");
+            write(sockfd,found,strlen(found)+1);
+            found = strsep(&command," ");
+            write(sockfd,found,strlen(found)+1);
+            char temp[MAX_SIZE];
+            copyToString(temp);
+            if(strcmp(temp,"1")==0) {
               printf("Invalid move\n");
               continue;
-          }
+            }
+
         } else if(strcmp(found,"cp")==0) {
-          printf("Copying file\n");
+
+            printf("Copying file\n");
+
         } else if(strcmp(found,"rm")==0) {
-          printf("Removing file\n");
+
+            printf("Removing file\n");
+
         } else if(strcmp(found,"tobigfs")==0) {
-          printf("Transferring to bigfs\n");
-          write(sockfd,"3\0",2);
+
+            printf("Transferring to bigfs\n");
+            write(sockfd,"3\0",2);
 
 
-          found = strsep(&command," ");
-          write(sockfd,found,strlen(found)+1);
+            found = strsep(&command," ");
+            write(sockfd,found,strlen(found)+1);
 
-          char temp[MAX_SIZE];
-          copyToString(temp);
-          if(strcmp(temp, "1")==0) {
+            char temp[MAX_SIZE];
+            copyToString(temp);
+            if(strcmp(temp, "1")==0) {
               printf("File/Directory with the same name exists\n");
               continue;
-          }
-          transfertoBigFS(found);
+            }
+            transfertoBigFS(found);
+
         } else if(strcmp(found,"frombigfs")==0) {
-          printf("Transferring from bigfs\n");
+
+            printf("Transferring from bigfs\n");
+            write(sockfd,"6",2);
+            found = strsep(&command," ");
+            write(sockfd,found,strlen(found)+1);
+            char temp[10];
+            copyToString(temp);
+            if(strcmp(temp,"0")==0) {
+                printf("File not found in current directory\n");
+                continue;
+            }
+            char loc[MAX_SIZE];
+            copyToString(loc);
+            char chunks[10];
+            copyToString(chunks);
+            printf("Location: %s\n",loc);
+            savefile(found,loc,atoi(chunks));
+
         } else if(strcmp(found,"exit")==0) {
-          printf("Exiting\n");
-          pthread_cancel(thread_id);
-          close(sockfd);
-          exit(0);
+            printf("Exiting\n");
+            pthread_cancel(thread_id);
+            close(sockfd);
+            exit(0);
         }
         else {
-          printf("Invalid command\n");
+            printf("Invalid command\n");
         }
     }
 

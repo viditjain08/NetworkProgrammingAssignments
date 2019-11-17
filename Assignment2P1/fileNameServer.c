@@ -538,6 +538,31 @@ int main()
             char chunks[10];
             sprintf(chunks,"%d",temp->no_of_chunks);
             write(connfd,chunks,strlen(chunks)+1);
+        } else if(strcmp(choice,"6")==0) {
+            char *file = (char*)malloc(sizeof(char)*MAX_SIZE);
+            copyToString(file);
+            printf("File %s\n",file);
+            NODE temp = cur->child;
+            int flag=0;
+            while(temp!=NULL) {
+                if(strcmp(temp->name, file)==0) {
+                    if(strcmp(temp->type, "file")==0) {
+                        flag=1;
+                        break;
+                    }
+
+                }
+                temp=temp->next;
+            }
+            if(flag==0) {
+                write(connfd,"0\0",2);
+            } else {
+                write(connfd,"1\0",2);
+            }
+            write(connfd,temp->loc_name,strlen(temp->loc_name)+1);
+            char chunks[10];
+            sprintf(chunks,"%d",temp->no_of_chunks);
+            write(connfd,chunks,strlen(chunks)+1);
         }
     }
 
