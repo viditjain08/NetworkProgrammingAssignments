@@ -19,7 +19,7 @@
 #define MAX_SIZE 1024
 #define PORT1 8080
 #define PORT3 8084
-#define MAXDATA 30
+#define MAXDATA 10
 #define BLOCKSIZE 1024000
 
 #define SA struct sockaddr
@@ -32,8 +32,8 @@ char rbuf2[2*MAX_SIZE];
 int start1=0,start2=0,bufsel=0;
 int cur1=0,cur2=0,cursel=0;
 
-char buffer1[MAXDATA][2*MAX_SIZE];
-char buffer2[MAXDATA][2*MAX_SIZE];
+char buffer1[MAXDATA][2*BLOCKSIZE];
+char buffer2[MAXDATA][2*BLOCKSIZE];
 int startptr1[MAXDATA];
 int startptr2[MAXDATA];
 int bufferselect[MAXDATA];
@@ -139,7 +139,7 @@ void *readfromName(void *vargp) {
 void datacopyToString(char *buf, int i) {
     if(currentselect[i]==0) {
 
-        while(startptr1[i]<MAX_SIZE && currentptr1[i]>=startptr1[i]);
+        while(startptr1[i]<BLOCKSIZE && currentptr1[i]>=startptr1[i]);
         int idx=0;
         // printf("(%s)\n",rbuf1+cur1);
 
@@ -147,25 +147,28 @@ void datacopyToString(char *buf, int i) {
             buf[idx] = buffer1[i][currentptr1[i]];
             idx++;
             currentptr1[i]++;
-            if(currentptr1[i]>=startptr1[i] && startptr1[i]>MAX_SIZE) {
+            if(currentptr1[i]>=startptr1[i] && startptr1[i]>BLOCKSIZE) {
                 currentselect[i]=1;
                 datacopyToString(buf+idx,i);
                 return;
             }
+            // printf("viditjain08-%c-%d-%d\n",buf[idx-1],currentptr1[i],startptr1[i]);
+
             while(currentptr1[i]>=startptr1[i]);
+
         }
 
         buf[idx]='\0';
         currentptr1[i]++;
         currentptr2[i]=0;
-        if(currentptr1[i]>=startptr1[i] && startptr1[i]>MAX_SIZE) {
+        if(currentptr1[i]>=startptr1[i] && startptr1[i]>BLOCKSIZE) {
             currentselect[i]=1;
             // printf("fsbjbvvbkd7n-%d\n",start2);
         }
     } else {
         // printf("jain%d-%d\n",startptr1[i],currentptr1[i]);
 
-        while(startptr2[i]<MAX_SIZE && currentptr2[i]>=startptr2[i]);
+        while(startptr2[i]<BLOCKSIZE && currentptr2[i]>=startptr2[i]);
 
         int idx=0;
         // printf("(-%s-)\n",rbuf2+cur2);
@@ -174,7 +177,7 @@ void datacopyToString(char *buf, int i) {
             buf[idx] = buffer2[i][currentptr2[i]];
             idx++;
             currentptr2[i]++;
-            if(currentptr2[i]>=startptr2[i] && startptr2[i]>MAX_SIZE) {
+            if(currentptr2[i]>=startptr2[i] && startptr2[i]>BLOCKSIZE) {
                 currentselect[i]=0;
                 datacopyToString(buf+idx,i);
                 return;
@@ -184,46 +187,56 @@ void datacopyToString(char *buf, int i) {
         buf[idx]='\0';
         currentptr2[i]++;
         currentptr1[i]=0;
-        if(currentptr2[i]>=startptr2[i] && startptr2[i]>MAX_SIZE) {
+        if(currentptr2[i]>=startptr2[i] && startptr2[i]>BLOCKSIZE) {
             currentselect[i]=0;
         }
     }
-    printf("String: %s\n",buf);
+    // printf("String: %s\n",buf);
 }
 void *readfromData(void *vargp) {
     int i = *((int*)vargp);
     int n;
+    fd_set rset,wset;
     while(1) {
-        if(bufferselect[i]==0 && startptr1[i]>MAX_SIZE) {
-            bufferselect[i]=1;
-            startptr2[i]=0;
-        } else if(bufferselect[i]==1 && startptr2[i]>MAX_SIZE) {
-            bufferselect[i]=0;
-            startptr1[i]=0;
-        }
-        if(bufferselect[i]==0)
-            n = read(datafds[i], buffer1[i]+startptr1[i], sizeof(buffer1[i])-startptr1[i]);
-        else
-            n = read(datafds[i], buffer2[i]+startptr2[i], sizeof(buffer2[i])-startptr2[i]);
-        if(n<0) {
-            if(errno != EWOULDBLOCK) {
-                printf("Read error\n");
-            }
-        }
-        else if(n==0) {
+        FD_ZERO(&rset);
+        FD_ZERO(&wset);
+        FD_SET(datafds[i], &rset);
+        select(datafds[i]+1,&rset,&wset,NULL,NULL);
 
-        } else {
-            if(bufferselect[i]==0) {
-                // buffer1[i][startptr1[i]+n]='\0';
-                // printf("Client received: %s\n",buffer1[i]+startptr1[i]);
-                startptr1[i]+=n;
-            } else {
-                // buffer2[i][startptr2[i]+n]='\0';
-                // printf("Client received: %s\n",buffer2[i]+startptr2[i]);
-                startptr2[i]+=n;
+        if(FD_ISSET(datafds[i], &rset)) {
+            if(bufferselect[i]==0 && startptr1[i]>BLOCKSIZE) {
+                bufferselect[i]=1;
+                startptr2[i]=0;
+            } else if(bufferselect[i]==1 && startptr2[i]>BLOCKSIZE) {
+                bufferselect[i]=0;
+                startptr1[i]=0;
             }
-            // printf("CLIENT RECIEVED: %s(%d)\n", rbuf1+start1-n, n);
+
+            if(bufferselect[i]==0)
+                n = read(datafds[i], buffer1[i]+startptr1[i], sizeof(buffer1[i])-startptr1[i]);
+            else
+                n = read(datafds[i], buffer2[i]+startptr2[i], sizeof(buffer2[i])-startptr2[i]);
+            if(n<0) {
+                if(errno != EWOULDBLOCK) {
+                    printf("Read error\n");
+                }
+            }
+            else if(n==0) {
+
+            } else {
+                if(bufferselect[i]==0) {
+                    // buffer1[i][startptr1[i]+n]='\0';
+                    // printf("Client received: %s\n",buffer1[i]+startptr1[i]);
+                    startptr1[i]+=n;
+                } else {
+                    // buffer2[i][startptr2[i]+n]='\0';
+                    // printf("Client received: %s\n",buffer2[i]+startptr2[i]);
+                    startptr2[i]+=n;
+                }
+                // printf("CLIENT RECIEVED: (%d)\n", n);
+            }
         }
+
     }
 }
 
@@ -322,7 +335,6 @@ void transfertoBigFS(char* file_name) {
         strcpy(dir,found);
         found = strsep(&file_name,"/");
     }
-    int idx=0;
     for(int i=0;i<no_of_parts;i++) {
         write(datafds[ptr],"0\0",2);
         int n = read(fd, temp_buf, sizeof(temp_buf));
@@ -358,7 +370,7 @@ void transfertoBigFS(char* file_name) {
         write(datafds[ptr],strcount,strlen(strcount));
         write(datafds[ptr],"\0",1);
 
-        sprintf(strcount, "%d", idx);
+        sprintf(strcount, "%d", i);
         write(datafds[ptr],strcount,strlen(strcount));
         write(datafds[ptr],"\0",1);
 
@@ -368,14 +380,70 @@ void transfertoBigFS(char* file_name) {
 
         if(i==0 && count==0) {
             write(sockfd,data_loc,strlen(data_loc)+1);
+            char *data_temp = (char*)malloc(sizeof(char)*MAX_SIZE);
+            strcpy(data_temp,data_loc);
+            char *found_dir;
+            found_dir = strsep(&data_temp,"/");
+            while(found_dir!=NULL) {
+                strcpy(dir,found_dir);
+                found_dir = strsep(&data_temp,"/");
+            }
+            printf("File Loc Name: %s\n",dir);
         }
         if(ptr==(no_of_dataservers-1)) {
             count++;
         }
         ptr = (ptr+1)%(no_of_dataservers);
-        idx++;
 
     }
+}
+
+void printfile(char *file_name, int no_of_chunks) {
+    int ptr=0;
+    for(int i=0;i<no_of_chunks;i++) {
+        write(datafds[ptr],"1\0",2);
+        write(datafds[ptr],file_name,strlen(file_name));
+        char chunks[10];
+        sprintf(chunks,"%d",i);
+        write(datafds[ptr],chunks,strlen(chunks)+1);
+        ptr = (ptr+1)%(no_of_dataservers);
+    }
+    ptr = 0;
+    for(int i=0;i<no_of_chunks;i++) {
+        char temp_buf[BLOCKSIZE];
+
+        datacopyToString(temp_buf, ptr);
+
+        printf("%s",temp_buf);
+        fflush(stdout);
+        ptr = (ptr+1)%(no_of_dataservers);
+
+    }
+    printf("\n");
+}
+
+void savefile(char *name, char *file_name, int no_of_chunks) {
+    int ptr=0;
+    for(int i=0;i<no_of_chunks;i++) {
+        write(datafds[ptr],"1\0",2);
+        write(datafds[ptr],file_name,strlen(file_name));
+        char chunks[10];
+        sprintf(chunks,"%d",i);
+        write(datafds[ptr],chunks,strlen(chunks)+1);
+        ptr = (ptr+1)%(no_of_dataservers);
+    }
+    ptr = 0;
+    for(int i=0;i<no_of_chunks;i++) {
+        char temp_buf[BLOCKSIZE];
+
+        datacopyToString(temp_buf, ptr);
+
+        printf("%s",temp_buf);
+        fflush(stdout);
+        ptr = (ptr+1)%(no_of_dataservers);
+
+    }
+    printf("\n");
 }
 int main() {
     // filestart = (NODE)malloc(sizeof(struct node));
@@ -476,9 +544,22 @@ int main() {
                 printf("Directory not present\n");
             }
         } else if(strcmp(found,"cat")==0) {
-
           printf("Printing File\n");
-
+          write(sockfd,"5\0",2);
+          found = strsep(&command," ");
+          write(sockfd,found,strlen(found)+1);
+          char temp[10];
+          copyToString(temp);
+          if(strcmp(temp,"0")==0) {
+              printf("File not found in current directory\n");
+              continue;
+          }
+          char loc[MAX_SIZE];
+          copyToString(loc);
+          char chunks[10];
+          copyToString(chunks);
+          printf("Location: %s\n",loc);
+          printfile(loc,atoi(chunks));
         } else if(strcmp(found,"mv")==0) {
 
           printf("Moving File\n");

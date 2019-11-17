@@ -162,6 +162,42 @@ void connectToClient() {
 
     fcntl(clientconn, F_SETFL, flags | O_NONBLOCK);
 }
+
+void printfile() {
+    char data_loc[MAX_SIZE];
+    copyToString(data_loc);
+    printf("Data location : %s\n",data_loc);
+    FILE* fp = fopen(data_loc, "r");
+    if (fp == NULL) {
+        printf("fopen failed, errno = %d\n", errno);
+    }
+
+    int fd = fileno(fp);
+    char temp_buf[BLOCKSIZE];
+    int n = read(fd, temp_buf, BLOCKSIZE);
+    printf("Data read %d bytes\n",n);
+    int write_count=0;
+    fd_set rset, wset;
+
+    while(write_count<n) {
+        FD_ZERO(&rset);
+        FD_ZERO(&wset);
+        FD_SET(clientconn, &wset);
+        select(clientconn+1,&rset,&wset,NULL,NULL);
+        if(FD_ISSET(clientconn,&wset)) {
+            int x;
+            if(write_count+(BLOCKSIZE/1000)>=n) {
+                x = write(clientconn,temp_buf+write_count,n-write_count);
+                write(clientconn,"\0",1);
+            }
+            else
+                x = write(clientconn,temp_buf+write_count,BLOCKSIZE/1000);
+            write_count+=(BLOCKSIZE)/1000;
+            // printf("Write count: %d-%d-%d\n",write_count,x,errno);
+        }
+
+    }
+}
 int main() {
 
     int sockfd;
@@ -240,6 +276,8 @@ int main() {
             fclose(fp);
 
 
+        } else if(strcmp(choice,"1")==0) {
+            printfile();
         }
 
 
