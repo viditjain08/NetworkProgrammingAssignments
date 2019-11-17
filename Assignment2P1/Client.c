@@ -477,6 +477,26 @@ void removefile(char *loc, int no_of_chunks) {
     }
 }
 
+void copyfile(char *loc, int no_of_chunks) {
+    int ptr=0;
+    char loca[MAX_SIZE];
+
+    for(int i=0;i<no_of_chunks;i++) {
+        write(datafds[ptr],"3",2);
+        write(datafds[ptr],loc,strlen(loc)+1);
+        char chunks[10];
+        sprintf(chunks,"%d",i);
+        write(datafds[ptr],chunks,strlen(chunks)+1);
+        if(i==0) {
+            datacopyToString(loca, ptr);
+            write(sockfd,loca,strlen(loca)+1);
+            // strcpy(loc,loca);
+        } else {
+            write(datafds[ptr],loca,strlen(loca)+1);
+        }
+        ptr = (ptr+1)%(no_of_dataservers);
+    }
+}
 int main() {
     // filestart = (NODE)malloc(sizeof(struct node));
     // filestart->next = NULL;
@@ -618,6 +638,24 @@ int main() {
         } else if(strcmp(found,"cp")==0) {
 
             printf("Copying file\n");
+            write(sockfd,"8\0",2);
+            found = strsep(&command," ");
+            write(sockfd,found,strlen(found)+1);
+            found = strsep(&command," ");
+            write(sockfd,found,strlen(found)+1);
+            char temp[MAX_SIZE];
+            copyToString(temp);
+            if(strcmp(temp,"1")==0) {
+              printf("Invalid copy\n");
+              continue;
+            }
+            char loc[MAX_SIZE];
+            copyToString(loc);
+            char chunks[10];
+            copyToString(chunks);
+            printf("Location: %s\n",loc);
+            copyfile(loc,atoi(chunks));
+
 
         } else if(strcmp(found,"rm")==0) {
 

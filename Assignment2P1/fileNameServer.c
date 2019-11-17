@@ -601,6 +601,118 @@ int main()
             char chunks[10];
             sprintf(chunks,"%d",temp->no_of_chunks);
             write(connfd,chunks,strlen(chunks)+1);
+
+        } else if(strcmp(choice,"8")==0) {
+
+            char *source = (char*)malloc(sizeof(char)*MAX_SIZE);
+            copyToString(source);
+            char *destination = (char*)malloc(sizeof(char)*MAX_SIZE);
+            copyToString(destination);
+            printf("Source: %s\n",source);
+            printf("Destination: %s\n",destination);
+            char *found;
+            char found2[MAX_SIZE];
+            found = strsep(&source,"/");
+            NODE temp_cur = cur;
+            int flag=0;
+            while(found!=NULL) {
+                if(strcmp(found,"..")==0) {
+                    temp_cur = temp_cur->parent;
+                } else if(strcmp(found,".")==0) {
+
+                } else {
+                    NODE temp = temp_cur->child;
+                    while(temp!=NULL) {
+                        if(strcmp(temp->name,found)==0) {
+                            temp_cur=temp;
+                            break;
+                        }
+                        temp=temp->next;
+                    }
+                    if(temp==NULL) {
+                        flag=1;
+                        break;
+                    }
+                }
+                found = strsep(&source,"/");
+            }
+            if(flag==1) {
+                write(connfd,"1\0",2);
+                continue;
+            }
+            printf("Source Location: %s\n",temp_cur->loc_name);
+            NODE par = temp_cur->parent;
+            NODE sourcenode = (NODE)malloc(sizeof(struct node));
+
+            sourcenode->next = NULL;
+            sourcenode->no_of_chunks = temp_cur->no_of_chunks;
+            strcpy(sourcenode->type,temp_cur->type);
+
+
+            found = strsep(&destination,"/");
+            NODE temp_cur2 = cur;
+            int flag2=0;
+            while(found!=NULL) {
+                if(strcmp(found,"..")==0) {
+                    temp_cur2 = temp_cur2->parent;
+                } else if(strcmp(found,".")==0) {
+
+                } else {
+                    NODE temp = temp_cur2->child;
+                    while(temp!=NULL) {
+                        if(strcmp(temp->name,found)==0) {
+                            temp_cur2=temp;
+                            break;
+                        }
+                        temp=temp->next;
+                    }
+                    if(temp==NULL) {
+                        strcpy(found2,found);
+                        found = strsep(&destination,"/");
+                        if(found!=NULL) {
+                            flag=1;
+                            break;
+                        } else {
+                            flag2=1;
+                            break;
+                        }
+
+                    }
+                }
+                found = strsep(&destination,"/");
+            }
+            if(strcmp(temp_cur2->type,"file")==0) {
+                flag=1;
+            }
+            if(flag==1) {
+                write(connfd,"1\0",2);
+                continue;
+            }
+            temp_cur->parent = temp_cur2;
+            if(temp_cur2->child==NULL) {
+                temp_cur2->child = sourcenode;
+            } else {
+                NODE temp = temp_cur2->child;
+                while(temp->next!=NULL) {
+                    temp=temp->next;
+                }
+                temp->next = sourcenode;
+            }
+            if(flag2==1) {
+                strcpy(sourcenode->name,found2);
+            } else {
+                strcpy(sourcenode->name,temp_cur->name);
+            }
+            sourcenode->child = NULL;
+
+            write(connfd,"0\0",2);
+            write(connfd,temp_cur->loc_name,strlen(temp_cur->loc_name)+1);
+            char chunks[10];
+            sprintf(chunks,"%d",temp_cur->no_of_chunks);
+            write(connfd,chunks,strlen(chunks)+1);
+            char datalocation[MAX_SIZE];
+            copyToString(datalocation);
+            strcpy(sourcenode->loc_name,datalocation);
         }
     }
 

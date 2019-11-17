@@ -289,6 +289,57 @@ int main() {
             strcat(name,chunks);
             if (remove(name) != 0)
                 printf("Unable to delete the file");
+        } else if(strcmp(choice,"3")==0) {
+            char name[MAX_SIZE];
+            copyToString(name);
+            char chunks[10];
+            copyToString(chunks);
+            int i=0;
+            char str[MAX_SIZE];
+            sprintf(str, "%s(%d)", name,i);
+            // printf("%s\n",str);
+            while(strcmp(chunks,"0")==0 && access(str,F_OK)!=-1) {
+                i++;
+                sprintf(str, "%s(%d)", name,i);
+            }
+            char source[MAX_SIZE];
+            strcpy(source,name);
+            if(strcmp(chunks,"0")==0) {
+                strcpy(name,str);
+                write(clientconn,name,strlen(name)+1);
+            } else {
+                copyToString(name);
+            }
+            printf("File nae: %s\n",source);
+
+            char ch;
+            strcat(source,chunks);
+
+            FILE* source1 = fopen(source, "r");
+
+            if( source1 == NULL )
+            {
+                printf("Press any key to exit...\n");
+                exit(EXIT_FAILURE);
+            }
+            FILE* tempfile = fopen(name,"w");
+            fclose(tempfile);
+            strcat(name,chunks);
+            FILE* target = fopen(name, "w");
+
+            if( target == NULL )
+            {
+                fclose(source1);
+                printf("Press any key to exit...\n");
+                exit(EXIT_FAILURE);
+            }
+
+            while( ( ch = fgetc(source1) ) != EOF )
+                fputc(ch, target);
+
+            printf("File copied successfully.\n");
+            fclose(source1);
+            fclose(target);
         }
 
 
