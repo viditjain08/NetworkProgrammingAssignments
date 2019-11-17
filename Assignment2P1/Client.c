@@ -530,8 +530,11 @@ int main() {
     bzero(&servaddr, sizeof(servaddr));
 
     // assign IP, PORT
+    FILE *t = fopen("server_address","r");
+    char nameServer[20];
+    fscanf(t,"%s", nameServer);
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr("172.17.72.164");
+    servaddr.sin_addr.s_addr = inet_addr(nameServer);
     servaddr.sin_port = htons(PORT1);
 
     // connect the client socket to server socket
