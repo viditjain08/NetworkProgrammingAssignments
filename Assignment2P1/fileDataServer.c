@@ -192,7 +192,7 @@ void printfile() {
             }
             else
                 x = write(clientconn,temp_buf+write_count,BLOCKSIZE/1000);
-            write_count+=(BLOCKSIZE)/1000;
+            write_count+=(BLOCKSIZE/1000);
             // printf("Write count: %d-%d-%d\n",write_count,x,errno);
         }
 
@@ -278,6 +278,17 @@ int main() {
 
         } else if(strcmp(choice,"1")==0) {
             printfile();
+        } else if(strcmp(choice,"2")==0) {
+            char name[MAX_SIZE];
+            copyToString(name);
+            char chunks[10];
+            copyToString(chunks);
+            if(access(name,F_OK)!=-1) {
+                remove(name);
+            }
+            strcat(name,chunks);
+            if (remove(name) != 0)
+                printf("Unable to delete the file");
         }
 
 

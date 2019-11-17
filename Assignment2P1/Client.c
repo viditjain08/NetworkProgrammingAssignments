@@ -142,7 +142,10 @@ void datacopyToString(char *buf, int i) {
         while(startptr1[i]<BLOCKSIZE && currentptr1[i]>=startptr1[i]);
         int idx=0;
         // printf("(%s)\n",rbuf1+cur1);
-
+        // printf("0-%d/%d\n",currentptr1[i],startptr1[i]);
+        // while(currentptr1[i]<startptr1[i] && buffer1[i][currentptr1[i]]=='\0') {
+        //     currentptr1[i]++;
+        // }
         while(buffer1[i][currentptr1[i]]!='\0') {
             buf[idx] = buffer1[i][currentptr1[i]];
             idx++;
@@ -152,7 +155,6 @@ void datacopyToString(char *buf, int i) {
                 datacopyToString(buf+idx,i);
                 return;
             }
-            // printf("0-%d/%d\n",currentptr1[i],startptr1[i]);
             while(currentptr1[i]>=startptr1[i]);
 
         }
@@ -171,7 +173,9 @@ void datacopyToString(char *buf, int i) {
 
         int idx=0;
         // printf("(-%s-)\n",rbuf2+cur2);
-
+        // while(currentptr2[i]<startptr2[i] && buffer2[i][currentptr2[i]]=='\0') {
+        //     currentptr2[i]++;
+        // }
         while(buffer2[i][currentptr2[i]]!='\0') {
             buf[idx] = buffer2[i][currentptr2[i]];
             idx++;
@@ -416,7 +420,6 @@ void printfile(char *file_name, int no_of_chunks) {
 
         datacopyToString(temp_buf, ptr);
 
-        printf("%s",temp_buf);
         ptr = (ptr+1)%(no_of_dataservers);
 
     }
@@ -450,6 +453,7 @@ void savefile(char *name, char *file_name, int no_of_chunks) {
         // fflush(stdout);
         datacopyToString(temp_buf, ptr);
         // fflush(stdout);
+        // printf("-%d-\n",strlen(temp_buf));
         fprintf(fp,"%s",temp_buf);
         fflush(stdout);
 
@@ -460,6 +464,19 @@ void savefile(char *name, char *file_name, int no_of_chunks) {
     fclose(fp);
 
 }
+
+void removefile(char *loc, int no_of_chunks) {
+    int ptr=0;
+    for(int i=0;i<no_of_chunks;i++) {
+        write(datafds[ptr],"2",2);
+        write(datafds[ptr],loc,strlen(loc)+1);
+        char chunks[10];
+        sprintf(chunks,"%d",i);
+        write(datafds[ptr],chunks,strlen(chunks)+1);
+        ptr = (ptr+1)%(no_of_dataservers);
+    }
+}
+
 int main() {
     // filestart = (NODE)malloc(sizeof(struct node));
     // filestart->next = NULL;
@@ -605,6 +622,21 @@ int main() {
         } else if(strcmp(found,"rm")==0) {
 
             printf("Removing file\n");
+            write(sockfd,"7",2);
+            found = strsep(&command," ");
+            write(sockfd,found,strlen(found)+1);
+            char temp[10];
+            copyToString(temp);
+            if(strcmp(temp,"0")==0) {
+                printf("File not found in current directory\n");
+                continue;
+            }
+            char loc[MAX_SIZE];
+            copyToString(loc);
+            char chunks[10];
+            copyToString(chunks);
+            printf("Location: %s\n",loc);
+            removefile(loc,atoi(chunks));
 
         } else if(strcmp(found,"tobigfs")==0) {
 

@@ -563,6 +563,44 @@ int main()
             char chunks[10];
             sprintf(chunks,"%d",temp->no_of_chunks);
             write(connfd,chunks,strlen(chunks)+1);
+
+        } else if(strcmp(choice,"7")==0) {
+            char *file = (char*)malloc(sizeof(char)*MAX_SIZE);
+            copyToString(file);
+            printf("File %s\n",file);
+            NODE temp = cur->child;
+            NODE prev = temp;
+            int flag=0;
+            if(temp==NULL) {
+            } else if(strcmp(prev->name,file)==0) {
+                cur->child = prev->next;
+                prev->next = NULL;
+                flag=1;
+            } else {
+                while(temp!=NULL) {
+                    if(strcmp(temp->name, file)==0) {
+                        if(strcmp(temp->type, "file")==0) {
+                            flag=1;
+                            prev->next = temp->next;
+                            temp->next = NULL;
+                            break;
+                        }
+
+                    }
+                    prev=temp;
+                    temp=temp->next;
+                }
+            }
+
+            if(flag==0) {
+                write(connfd,"0\0",2);
+            } else {
+                write(connfd,"1\0",2);
+            }
+            write(connfd,temp->loc_name,strlen(temp->loc_name)+1);
+            char chunks[10];
+            sprintf(chunks,"%d",temp->no_of_chunks);
+            write(connfd,chunks,strlen(chunks)+1);
         }
     }
 
