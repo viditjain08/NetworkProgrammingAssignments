@@ -419,7 +419,10 @@ void printfile(char *file_name, int no_of_chunks) {
         char temp_buf[BLOCKSIZE];
 
         datacopyToString(temp_buf, ptr);
-
+        while(strlen(temp_buf)!=0) {
+            printf("%s",temp_buf);
+            datacopyToString(temp_buf, ptr);
+        }
         ptr = (ptr+1)%(no_of_dataservers);
 
     }
@@ -452,10 +455,13 @@ void savefile(char *name, char *file_name, int no_of_chunks) {
         char temp_buf[BLOCKSIZE];
         // fflush(stdout);
         datacopyToString(temp_buf, ptr);
+        while(strlen(temp_buf)!=0) {
+            fprintf(fp,"%s",temp_buf);
+            datacopyToString(temp_buf, ptr);
+        }
+
         // fflush(stdout);
         // printf("-%d-\n",strlen(temp_buf));
-        fprintf(fp,"%s",temp_buf);
-        fflush(stdout);
 
         ptr = (ptr+1)%(no_of_dataservers);
 

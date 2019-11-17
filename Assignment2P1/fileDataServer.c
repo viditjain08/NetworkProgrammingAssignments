@@ -188,10 +188,12 @@ void printfile() {
             int x;
             if(write_count+(BLOCKSIZE/1000)>=n) {
                 x = write(clientconn,temp_buf+write_count,n-write_count);
+                write(clientconn,"\0\0",2);
+            }
+            else {
+                x = write(clientconn,temp_buf+write_count,BLOCKSIZE/1000);
                 write(clientconn,"\0",1);
             }
-            else
-                x = write(clientconn,temp_buf+write_count,BLOCKSIZE/1000);
             write_count+=(BLOCKSIZE/1000);
             // printf("Write count: %d-%d-%d\n",write_count,x,errno);
         }
